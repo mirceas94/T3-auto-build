@@ -29,7 +29,7 @@ test('the SVG assets are self-contained and script-free', () => {
 
 test('package metadata is complete', () => {
   assert.match(pkg.version, /^\d+\.\d+\.\d+(-[\w.-]+)?$/);
-  assert.match(pkg.repository.url, /mirceas94\/t3-auto-build/);
+  assert.match(pkg.repository.url, /mirceas94\/T3-auto-build/);
   assert.ok(pkg.homepage);
   assert.ok(pkg.bugs?.url);
   assert.ok(pkg.keywords?.length);

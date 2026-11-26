@@ -26,7 +26,7 @@ test('release CLI flags and usage errors', (t) => {
 
 test('package identity, dependencies, and packed file exclusions', () => {
   assert.equal(pkg.version, '2.2.0');
-  for (const value of [pkg.repository.url, pkg.homepage, pkg.bugs.url]) assert.match(value, /github\.com\/mirceas94\/t3-auto-build/);
+  for (const value of [pkg.repository.url, pkg.homepage, pkg.bugs.url]) assert.match(value, /github\.com\/mirceas94\/T3-auto-build/);
   for (const k of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies', 'bundledDependencies']) assert.ok(!pkg[k] || (Array.isArray(pkg[k]) ? pkg[k].length === 0 : Object.keys(pkg[k]).length === 0), `${k} must be empty`);
   for (const f of pkg.files) {
     assert.doesNotMatch(f, /^(\.\/)?(\.github|\.claude|assets|test|SECURITY\.md|CONTRIBUTING\.md)(\/|$)/);
@@ -83,7 +83,7 @@ test('links into this repository resolve to files and headings', () => {
     .filter((name) => /\.(md|yml)$/.test(name)).map((name) => path.join(dir, name)));
   const docs = ['README.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'SECURITY.md', ...github]
     .filter((name) => fs.existsSync(path.join(ROOT, name)));
-  const own = /^https:\/\/(?:github\.com\/mirceas94\/t3-auto-build\/(?:blob|tree)\/main|raw\.githubusercontent\.com\/mirceas94\/t3-auto-build\/main)\//;
+  const own = /^https:\/\/(?:github\.com\/mirceas94\/T3-auto-build\/(?:blob|tree)\/main|raw\.githubusercontent\.com\/mirceas94\/T3-auto-build\/main)\//;
   const broken = [];
   let checked = 0;
   for (const doc of docs) {

@@ -8,8 +8,8 @@ request.
 You need Node 18.18 or newer and Git. There is nothing to install.
 
 ```sh
-git clone https://github.com/mirceas94/t3-auto-build.git
-cd t3-auto-build
+git clone https://github.com/mirceas94/T3-auto-build.git
+cd T3-auto-build
 node --test
 ```
 

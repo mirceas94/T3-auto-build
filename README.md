@@ -1,18 +1,18 @@
-# t3-auto-build
+# T3-auto-build
 
-<p align="center"><img src="https://raw.githubusercontent.com/mirceas94/t3-auto-build/main/assets/banner.svg" alt="t3-auto-build: subscription-aware multi-model routing with safety guards across Codex, Antigravity and Claude" width="100%"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/mirceas94/T3-auto-build/main/assets/banner.svg" alt="T3-auto-build: subscription-aware multi-model routing with safety guards across Codex, Antigravity and Claude" width="100%"></p>
 
 <p align="center">Cross-platform installer and <code>$auto-build</code> orchestration suite for T3 Code.</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/t3-auto-build"><img src="https://img.shields.io/npm/v/t3-auto-build" alt="npm version"></a>
-  <a href="https://github.com/mirceas94/t3-auto-build/actions/workflows/ci.yml"><img src="https://github.com/mirceas94/t3-auto-build/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status on main"></a>
+  <a href="https://github.com/mirceas94/T3-auto-build/actions/workflows/ci.yml"><img src="https://github.com/mirceas94/T3-auto-build/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status on main"></a>
   <img src="https://img.shields.io/badge/node-%3E%3D18.18-brightgreen" alt="Node 18.18 or newer">
   <img src="https://img.shields.io/badge/dependencies-0-brightgreen" alt="Zero dependencies">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license">
 </p>
 
-## Why t3-auto-build
+## Why T3-auto-build
 
 `t3-auto-build` equips T3 Code (and Claude Code) with subscription-aware multi-model routing and
 safety guardrails: a coding-discipline `CLAUDE.md`, reusable slash commands (`/fix`, `/review`,
@@ -773,8 +773,8 @@ destructive-command guards need no config.
   with the exceptions described in [What `init` touches](#what-init-touches).
 - Guard hooks have [known limits](#known-limits). Do not rely on them as a security boundary.
 
-Report vulnerabilities as described in [SECURITY.md](https://github.com/mirceas94/t3-auto-build/blob/main/SECURITY.md). To contribute,
-see [CONTRIBUTING.md](https://github.com/mirceas94/t3-auto-build/blob/main/CONTRIBUTING.md).
+Report vulnerabilities as described in [SECURITY.md](https://github.com/mirceas94/T3-auto-build/blob/main/SECURITY.md). To contribute,
+see [CONTRIBUTING.md](https://github.com/mirceas94/T3-auto-build/blob/main/CONTRIBUTING.md).
 
 ## Troubleshooting & Common Gotchas
 

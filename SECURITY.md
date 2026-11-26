@@ -10,7 +10,7 @@
 ## Reporting a vulnerability
 
 Report privately, and only through
-[GitHub security advisories](https://github.com/mirceas94/t3-auto-build/security/advisories/new).
+[GitHub security advisories](https://github.com/mirceas94/T3-auto-build/security/advisories/new).
 Do not open a public issue or pull request for a vulnerability.
 
 Include the version, operating system, Node version and steps to reproduce. Remove tokens, keys and

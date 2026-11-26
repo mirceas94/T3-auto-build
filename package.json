@@ -18,13 +18,13 @@
     "cross-provider",
     "model-routing"
   ],
-  "homepage": "https://github.com/mirceas94/t3-auto-build#readme",
+  "homepage": "https://github.com/mirceas94/T3-auto-build#readme",
   "bugs": {
-    "url": "https://github.com/mirceas94/t3-auto-build/issues"
+    "url": "https://github.com/mirceas94/T3-auto-build/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mirceas94/t3-auto-build.git"
+    "url": "git+https://github.com/mirceas94/T3-auto-build.git"
   },
   "type": "module",
   "bin": {
