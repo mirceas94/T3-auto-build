@@ -121,7 +121,9 @@ An `api` tier counts only with `--allow-usage-credits`.
 
 `--parent fable` selects `claude-fable-5-2`, from the scarce `fable` pool. `init` writes `model` and
 `effortLevel` to `settings.json` only when the key is absent or still holds the value it wrote
-before. Without an eligible Claude tier, no parent is set.
+before. Without an eligible Claude tier, no parent is set. This sets Claude Code's default session
+model; in T3 Code you can still start a `$auto-build` thread on any allowlisted model (see
+[Starting model](#starting-model)).
 
 ### Cross-hosted overflow
 
@@ -273,6 +275,36 @@ resume later.
 | `--budget` | Cheaper routing; no plan cross-check, blind tests or dual audit. |
 | `--reset-cooldowns` | Clear all locks first. |
 | `--<provider>-only` | Use only that provider's models. |
+
+### Starting model
+
+You can start a `$auto-build` conversation in T3 Code on **any allowlisted model** (for example
+`gemini-4-neon`), not only the configured Claude [parent model](#parent-model). The starting model
+acts as the orchestrator/coordinator: it runs triage, tracks waves and checks, and delegates
+builders, testers, and auditors along the configured ladders rather than doing all edits itself.
+
+Choose a starting model that fits the task and your active quotas (check `t3-auto-build check-models`
+and `t3-auto-build quota status` to avoid models under active provider locks or plan/availability
+restrictions):
+
+| Goal / task type | Practical starting models |
+|---|---|
+| Saving primary quota, lightweight triage, or small tasks | `gemini-4-neon`, `gpt-6-luna` |
+| General multi-file or UI orchestration | `claude-sonnet-5-5`, `gemini-4-neon` |
+| Deeper debugging, architecture, or high-risk `L2`/`L3` coordination | `gpt-5.6-terra`, `claude-opus-5-5`, `gemini-4-carbon` |
+
+Two practical nuances to keep in mind:
+
+- **Hook enforcement scope:** [`pre-tool-use.mjs`](#hooks) enforces allowlist, ban, restriction,
+  speed-mode, and cooldown guards on `delegate_task` and guarded tools (`Edit`, `Write`,
+  `MultiEdit`, `Bash`), not on T3 Code's UI thread model picker. Choosing a non-allowlisted or
+  locked model in the picker is not blocked by the hook itself; enforcement happens when guarded
+  tools or `delegate_task` calls run.
+- **Follow-up messages without `$auto-build`:** Subsequent messages in the same thread that omit
+  `$auto-build` follow the **Follow-Up Refinement Rule** rather than always launching a fresh full
+  `$auto-build` pipeline—questions are answered directly from thread context, `L0` micro-tweaks
+  take the fast single-builder path, and only substantive `L1`–`L3` changes re-run the full
+  pipeline.
 
 ## CLI
 
