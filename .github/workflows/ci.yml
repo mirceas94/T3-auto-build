@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [18, 20, 22]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Check syntax
+        run: |
+          for file in bin/*.mjs lib/*.mjs hooks/*.mjs test/*.mjs; do
+            node --check "$file" || exit 1
+          done
+
+      - name: Test
+        run: node --test
+
+      - name: Verify packed files
+        run: |
+          npm pack --dry-run --json | node -e '
+            let input = "";
+            process.stdin.on("data", (chunk) => (input += chunk));
+            process.stdin.on("end", () => {
+              // npm <=11 prints an array, newer npm an object keyed by package name.
+              const [packed] = Object.values(JSON.parse(input));
+              const files = (packed?.files ?? []).map((file) => file.path);
+              const allowed = /^(LICENSE|README\.md|package\.json)$|^(bin|lib|core|presets|skills|hooks)\//;
+              const unexpected = files.filter((file) => !allowed.test(file));
+              const missing = ["bin/cli.mjs", "README.md"].filter((file) => !files.includes(file));
+              if (!files.length || unexpected.length || missing.length) {
+                console.error({ count: files.length, unexpected, missing });
+                process.exit(1);
+              }
+              console.log(`${files.length} packed files OK`);
+            });
+          '

@@ -1,9 +1,11 @@
 #!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
 import { HEAVY_MODELS } from '../lib/detect.mjs';
 import { doctor } from '../lib/doctor.mjs';
 import { PRESETS, install, uninstall, wantsAuto } from '../lib/install.mjs';
 import { MODULES, readManifest } from '../lib/manifest.mjs';
-import { CliError, resolveTarget } from '../lib/paths.mjs';
+import { CliError, PACKAGE_ROOT, resolveTarget } from '../lib/paths.mjs';
 import { syncModels } from '../lib/probe.mjs';
 import { confirmYes, initPrompts, parseChoice, parsePercent, parseTierSpec } from '../lib/prompt.mjs';
 import { QUOTA_WINDOWS, quotaCheck, quotaClear, quotaSet, quotaStatus } from '../lib/quota.mjs';
@@ -23,6 +25,7 @@ Commands:
 Options:
   --target <dir>      config dir (default: $CLAUDE_CONFIG_DIR, else ~/.claude)
   -h, --help          show this help
+  -v, --version       print the version
   init only:
   --preset <name>     ${PRESETS.join(' | ')}
   --modules <name>    ${MODULES.join(' | ')}
@@ -48,7 +51,7 @@ Options:
   --all               remove every lock`;
 
 const VALUE_FLAGS = ['target', 'preset', 'modules', 'compaction', 'tiers', 'providers', 'until', 'reason'];
-const SWITCHES = ['yes', 'force', 'help', 'probe', 'dry-run', 'all', ...QUOTA_WINDOWS];
+const SWITCHES = ['yes', 'force', 'help', 'version', 'probe', 'dry-run', 'all', ...QUOTA_WINDOWS];
 const COMMAND_FLAGS = {
   init: ['preset', 'modules', 'compaction', 'tiers', 'probe', 'yes', 'force'],
   doctor: [],
@@ -66,7 +69,7 @@ function parseArgs(argv) {
   const flags = {};
   const positional = [];
   for (let i = 0; i < argv.length; i += 1) {
-    const argument = argv[i] === '-h' ? '--help' : argv[i];
+    const argument = { '-h': '--help', '-v': '--version' }[argv[i]] ?? argv[i];
     if (!argument.startsWith('-')) {
       positional.push(argument);
       continue;
@@ -152,6 +155,7 @@ function quota(action, target, subject, flags) {
 async function main(argv) {
   const { flags, positional } = parseArgs(argv);
   if (flags.help) return console.log(USAGE);
+  if (flags.version) return console.log(JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8')).version);
   const [first, ...rest] = positional;
   const command = first === 'quota' ? `quota ${rest.shift()}` : first;
   const [min, max] = ARGUMENTS[command] ?? [0, 0];

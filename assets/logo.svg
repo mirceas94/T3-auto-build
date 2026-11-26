@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img">
+  <title>t3-auto-build logo</title>
+  <rect x="3" y="3" width="250" height="250" rx="48" fill="#0f172a" stroke="#475569" stroke-width="4"/>
+  <!-- provider feeds -->
+  <g stroke-width="8" fill="none">
+    <path d="M44 64H92" stroke="#38bdf8"/>
+    <path d="M44 128H92" stroke="#a78bfa"/>
+    <path d="M44 192H92" stroke="#fbbf24"/>
+  </g>
+  <circle cx="44" cy="64" r="18" fill="#38bdf8"/>
+  <circle cx="44" cy="128" r="18" fill="#a78bfa"/>
+  <circle cx="44" cy="192" r="18" fill="#fbbf24"/>
+  <!-- wave columns -->
+  <g fill="#e2e8f0">
+    <path d="M84 44h20v40H84zM84 108h20v40H84zM84 172h20v40H84z"/>
+    <path d="M116 60h20v60h-20zM116 136h20v60h-20z" fill="#94a3b8"/>
+  </g>
+  <!-- guard shield with lock -->
+  <path d="M188 68l40 14v46c0 30-17 49-40 60-23-11-40-30-40-60V82z" fill="#34d399"/>
+  <path d="M177 122v-9a11 11 0 0 1 22 0v9" fill="none" stroke="#0f172a" stroke-width="7"/>
+  <rect x="169" y="120" width="38" height="31" rx="4" fill="#0f172a"/>
+</svg>

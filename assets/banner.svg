@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 360" width="1280" height="360" role="img">
+  <title>t3-auto-build: multi-model orchestration with safety guards for T3 Code</title>
+  <rect x="2" y="2" width="1276" height="356" rx="24" fill="#0f172a" stroke="#475569" stroke-width="2"/>
+  <g font-family="ui-monospace,SFMono-Regular,Consolas,Menlo,monospace">
+    <text x="72" y="152" font-size="72" font-weight="700" fill="#f8fafc">t3-auto-build</text>
+    <text x="72" y="282" font-size="20" fill="#94a3b8"><tspan fill="#38bdf8">codex</tspan> / <tspan fill="#a78bfa">antigravity</tspan> / <tspan fill="#fbbf24">claude</tspan></text>
+  </g>
+  <g font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="28" fill="#cbd5e1">
+    <text x="74" y="204">Multi-model builds in parallel waves,</text>
+    <text x="74" y="240">with safety guards built in.</text>
+  </g>
+  <!-- provider feeds -->
+  <g stroke-width="4" fill="none">
+    <path d="M784 92H828L864 112" stroke="#38bdf8"/>
+    <path d="M784 180H864" stroke="#a78bfa"/>
+    <path d="M784 268H828L864 248" stroke="#fbbf24"/>
+  </g>
+  <g fill="#0f172a" stroke-width="5">
+    <circle cx="784" cy="92" r="22" stroke="#38bdf8"/>
+    <circle cx="784" cy="180" r="22" stroke="#a78bfa"/>
+    <circle cx="784" cy="268" r="22" stroke="#fbbf24"/>
+  </g>
+  <circle cx="784" cy="92" r="8" fill="#38bdf8"/>
+  <circle cx="784" cy="180" r="8" fill="#a78bfa"/>
+  <circle cx="784" cy="268" r="8" fill="#fbbf24"/>
+  <!-- wave columns: disjoint blocks -->
+  <path d="M908 112H932M908 180H932M908 248H932M976 136H1000M976 224H1000M1044 180H1090" stroke="#64748b" stroke-width="4" fill="none"/>
+  <g fill="#e2e8f0">
+    <path d="M864 84h44v56h-44zM864 152h44v56h-44zM864 220h44v56h-44z"/>
+    <path d="M932 92h44v84h-44zM932 184h44v84h-44z" fill="#94a3b8"/>
+    <path d="M1000 112h44v136h-44z" fill="#64748b"/>
+  </g>
+  <!-- guard shield with lock -->
+  <path d="M1150 96l60 22v66c0 44-26 70-60 86-34-16-60-42-60-86v-66z" fill="#34d399"/>
+  <path d="M1134 174v-14a16 16 0 0 1 32 0v14" fill="none" stroke="#0f172a" stroke-width="9"/>
+  <rect x="1122" y="172" width="56" height="44" rx="6" fill="#0f172a"/>
+</svg>

@@ -1,0 +1,38 @@
+import assert from 'node:assert/strict';
+import path from 'node:path';
+import { test } from 'node:test';
+import { json, read, ROOT, sandbox } from './helpers.mjs';
+
+const pkg = json(path.join(ROOT, 'package.json'));
+
+test('--version and -v print the package version; --help wins', (t) => {
+  const box = sandbox(t);
+  for (const flag of ['--version', '-v']) {
+    const result = box.cli(flag);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, `${pkg.version}\n`);
+  }
+  assert.match(box.cli('--version', '--help').stdout, /--version/);
+});
+
+test('the SVG assets are self-contained and script-free', () => {
+  for (const name of ['logo', 'banner']) {
+    const svg = read(path.join(ROOT, 'assets', `${name}.svg`)).replace(/\sxmlns(?::\w+)?="[^"]*"/g, '');
+    for (const banned of [/https?:/i, /<script/i, /<image/i, /<foreignObject/i, /@import/i, /@font-face/i, /url\(/i, /\son[a-z]+\s*=/i]) {
+      assert.doesNotMatch(svg, banned, `${name}.svg`);
+    }
+  }
+  const [, , width, height] = read(path.join(ROOT, 'assets', 'logo.svg')).match(/viewBox="([^"]*)"/)[1].trim().split(/[\s,]+/).map(Number);
+  assert.ok(width > 0 && width === height, 'logo viewBox is square');
+});
+
+test('package metadata is complete', () => {
+  assert.match(pkg.version, /^\d+\.\d+\.\d+(-[\w.-]+)?$/);
+  assert.match(pkg.repository.url, /mirceas94\/t3-auto-build/);
+  assert.ok(pkg.homepage);
+  assert.ok(pkg.bugs?.url);
+  assert.ok(pkg.keywords?.length);
+  assert.equal(pkg.engines.node, '>=18');
+  assert.equal(pkg.dependencies, undefined);
+  assert.doesNotMatch(JSON.stringify(pkg.author ?? ''), /@/);
+});

@@ -1,24 +1,47 @@
-﻿# t3-auto-build
+# t3-auto-build
+
+<p align="center"><img src="https://raw.githubusercontent.com/mirceas94/t3-auto-build/main/assets/banner.svg" alt="t3-auto-build: multi-model builds in parallel waves with safety guards, fed by Codex, Antigravity and Claude" width="100%"></p>
+
+<p align="center">Cross-platform installer and <code>$auto-build</code> orchestration suite for T3 Code.</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/t3-auto-build"><img src="https://img.shields.io/npm/v/t3-auto-build" alt="npm version"></a>
+  <a href="https://github.com/mirceas94/t3-auto-build/actions/workflows/ci.yml"><img src="https://github.com/mirceas94/t3-auto-build/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status on main"></a>
+  <img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen" alt="Node 18 or newer">
+  <img src="https://img.shields.io/badge/dependencies-0-brightgreen" alt="Zero dependencies">
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license">
+</p>
+
+## Why t3-auto-build
 
 Cross-platform installer and `$auto-build` orchestration suite for T3 Code: a coding-discipline
 `CLAUDE.md`, slash commands, an `auto-build` skill rendered from your own model config, and Node
 hooks for guardrails. No dependencies. Node 18 or newer.
 
-## T3 Code quickstart
+- **Multi-model routing:** presets for Codex, Antigravity and Claude, with failover along model ladders.
+- **Parallel waves:** larger tasks are split into file-disjoint waves with checks between them.
+- **Guardrails:** hooks block secret-file edits, some destructive commands and disallowed delegate models.
+- **Quota aware:** cooldown locks keep delegation away from exhausted providers and models.
+- **Careful installs:** your edited files are kept unless you pass `--force`, which backs them up first.
+- **Zero dependencies:** plain Node, 18 or newer.
 
-1. Install into your Claude config directory. From a clone:
+## 60-second Quick Start
+
+1. Install into your Claude config directory:
 
    ```sh
-   node bin/cli.mjs init
+   npx t3-auto-build init
    ```
 
-   Once the package is published, `npx t3-auto-build init` does the same.
+   From a clone, `node bin/cli.mjs init` does the same.
 
 2. Check the result:
 
    ```sh
-   node bin/cli.mjs doctor
+   npx t3-auto-build doctor
    ```
+
+   From a clone: `node bin/cli.mjs doctor`.
 
 3. **Restart T3 Code** (and any running Claude Code session). Hooks and `settings.json` changes
    load only at startup.
@@ -28,37 +51,54 @@ hooks for guardrails. No dependencies. Node 18 or newer.
 The skill calls `t3-auto-build quota ...`. From a clone, `npm link` puts that command on `PATH`.
 Without it the skill reads or edits the cooldown file directly.
 
-## Preset matrix
+## auto-build workflow
 
-| Preset | Models | Codex | Antigravity | Claude | Dual audit |
-|---|---|---|---|---|---|
-| `tri-provider` (default) | 9 | 3 | 3 | 3 | Claude Opus 5.5 + Gemini 4 Carbon |
-| `claude-codex` | 6 | 3 | 0 | 3 | Claude Opus 5.5 + gpt-6-luna |
-| `claude-only` | 3 | 0 | 0 | 3 | Claude Opus 5.5 + Claude Sonnet 5.5 |
+Triage sizes the task, `L2`/`L3` plan and build in waves (foundations, core, tests/docs), then verification runs with at most 2 fix rounds.
 
-Every preset bans `Argon` and `Fable/Mythos`, defaults to Claude Sonnet 5.5 at `medium` effort and
-sets the auto-compaction threshold to 35%.
+```mermaid
+flowchart TD
+  start["auto-build request"] --> step0["Step 0: lockouts, git baseline, resume"]
+  step0 --> triage["Triage: REPO_BRIEF, level and shape"]
+  triage -->|"L0 / L1"| single["Single builder"]
+  triage -->|"L2 / L3"| plan["Plan (cross-check on L3)"]
+  plan --> wave1["Wave 1: foundations"]
+  wave1 --> wave2["Wave 2: core"]
+  wave2 --> wave3["Wave 3: tests and docs"]
+  single --> verify["Verify: tests, lint, diff audit"]
+  wave3 --> verify
+  verify -->|"blockers"| fix["Fix round (max 2)"]
+  fix --> verify
+  verify -->|"passed"| report["Optional commit and report"]
+```
 
-## Provider detection and tiers
+1. **Step 0:** check lockouts, record the `git status` baseline, resume if asked.
+2. **Triage:** write a short `REPO_BRIEF` (using the cached `.claude/repo-profile.md`) and pick the
+   level `L0` to `L3` and work shape `A` (multi-file, UI) or `B` (algorithms, debugging).
+3. **Plan** (`L2`/`L3`), cross-checked by another provider on `L3` when available.
+4. **Build:** `L2`/`L3` run in file-disjoint waves: foundations, core, tests/docs. Builders in a wave
+   run in parallel; the diff guard and exit checks pass before the next wave.
+5. **Verify:** blind edge-case tests (`L2`/`L3`), tests and lint, a diff-only audit preferring
+   another provider (two auditors on `L3`), at most 2 fix rounds, then an optional commit and a
+   report.
 
-Interactive `init` on a fresh target picks the default preset from the binaries on `PATH`: `claude`,
-`codex` and `antigravity` give `tri-provider`, `claude` and `codex` give `claude-codex`, anything
-else gives `claude-only`. Provider config folders are only checked for existence and do not change
-the preset. With an existing config its preset is the default. `init --yes` does not detect: a fresh
-install without `--preset` uses `tri-provider`.
+Runs that edit code, and `--plan-only` runs, save `.claude/auto-build-state.json` (`flags`,
+`completedWaves`, `modifiedFiles`, `remaining`, `blockers`) after each wave or step and keep it
+gitignored. `$auto-build --resume` restores it, lets newly typed flags win and skips completed waves.
+It stops if the file is missing or invalid. When quota runs out, the run saves state so you can
+resume later.
 
-`--tiers provider:plan[:weekday]`, comma separated (for example `claude:max:monday,codex:plus`),
-records subscription plans. Interactive `init` asks for each detected provider when the flag is
-absent.
-
-| Provider | Plan: short-window limit locks the provider | Plan: locks only the heavy model | Heavy model |
-|---|---|---|---|
-| `claude` | `pro` | `max` | Claude Opus 5.5 |
-| `codex` | `plus` | `pro` | gpt-6-luna |
-| `antigravity` | `standard` | `ultra` | Gemini 4 Carbon |
-
-The weekday (`monday` or `mon`) is the weekly reset day, taken as 00:00 UTC. A custom `heavyModels`
-list in the config is kept.
+| Flag | Effect |
+|---|---|
+| `--fast` / `--strict` | Cap at `L1` / force `L3`. |
+| `--plan-only` | Stop after the plan. |
+| `--dry-run` | Stop after triage and show the routing. |
+| `--audit-only` | Test and audit the uncommitted diff, then fix if needed. |
+| `--resume` | Continue an interrupted run. |
+| `--commit` | Commit only if the active checks pass. |
+| `--no-audit`, `--no-tests` | Skip the audit / tests. |
+| `--budget` | Cheaper routing; no plan cross-check, blind tests or dual audit. |
+| `--reset-cooldowns` | Clear all locks first. |
+| `--<provider>-only` | Use only that provider's models. |
 
 ## CLI
 
@@ -84,6 +124,8 @@ list in the config is kept.
 | `--providers <list>` | sync-models | Only these of `claude`, `codex`, `antigravity`; comma separated. |
 | `--burst`, `--5h`, `--weekly`, `--until <when>`, `--reason <text>` | quota set | See [Quota](#quota). |
 | `--all` | quota clear | Remove every lock. |
+| `--version`, `-v` | no command | Print the version. |
+| `-h`, `--help` | all | Show the usage text. |
 
 Exit codes: `0` success, `1` failure (invalid JSON, broken install), `2` usage error.
 
@@ -99,6 +141,45 @@ A re-run without `--modules` keeps the previous choice. When you change it, `ini
 that no longer belong and keeps and reports the ones you changed. Switching to `core` also removes
 the hook entries and environment value from `settings.json`. That cleanup is the one case where a
 `core` run writes `settings.json`.
+
+## Presets and safety guards
+
+A preset sets the model allowlist, ladders and defaults. The installed hooks block secret-file edits,
+force pushes and hard resets, protected recursive `rm` targets, and `delegate_task` calls to banned,
+non-allowlisted or locked models. They are a safety net, not a sandbox: see [Hooks](#hooks) and its
+[known limits](#known-limits).
+
+### Preset matrix
+
+| Preset | Models | Codex | Antigravity | Claude | Dual audit |
+|---|---|---|---|---|---|
+| `tri-provider` (default) | 9 | 3 | 3 | 3 | Claude Opus 5.5 + Gemini 4 Carbon |
+| `claude-codex` | 6 | 3 | 0 | 3 | Claude Opus 5.5 + gpt-6-luna |
+| `claude-only` | 3 | 0 | 0 | 3 | Claude Opus 5.5 + Claude Sonnet 5.5 |
+
+Every preset bans `Argon` and `Fable/Mythos`, defaults to Claude Sonnet 5.5 at `medium` effort and
+sets the auto-compaction threshold to 35%.
+
+### Provider detection and tiers
+
+Interactive `init` on a fresh target picks the default preset from the binaries on `PATH`: `claude`,
+`codex` and `antigravity` give `tri-provider`, `claude` and `codex` give `claude-codex`, anything
+else gives `claude-only`. Provider config folders are only checked for existence and do not change
+the preset. With an existing config its preset is the default. `init --yes` does not detect: a fresh
+install without `--preset` uses `tri-provider`.
+
+`--tiers provider:plan[:weekday]`, comma separated (for example `claude:max:monday,codex:plus`),
+records subscription plans. Interactive `init` asks for each detected provider when the flag is
+absent.
+
+| Provider | Plan: short-window limit locks the provider | Plan: locks only the heavy model | Heavy model |
+|---|---|---|---|
+| `claude` | `pro` | `max` | Claude Opus 5.5 |
+| `codex` | `plus` | `pro` | gpt-6-luna |
+| `antigravity` | `standard` | `ultra` | Gemini 4 Carbon |
+
+The weekday (`monday` or `mon`) is the weekly reset day, taken as 00:00 UTC. A custom `heavyModels`
+list in the config is kept.
 
 ## sync-models
 
@@ -173,37 +254,6 @@ skipped with a warning and kept in the file until it is overwritten or cleared (
 or `--all`). A file that is not a JSON object is unreadable: hooks warn and ignore it. A write that
 leaves no entries removes the file.
 
-## auto-build workflow
-
-1. **Step 0:** check lockouts, record the `git status` baseline, resume if asked.
-2. **Triage:** write a short `REPO_BRIEF` (using the cached `.claude/repo-profile.md`) and pick the
-   level `L0` to `L3` and work shape `A` (multi-file, UI) or `B` (algorithms, debugging).
-3. **Plan** (`L2`/`L3`), cross-checked by another provider on `L3` when available.
-4. **Build:** `L2`/`L3` run in file-disjoint waves: foundations, core, tests/docs. Builders in a wave
-   run in parallel; the diff guard and exit checks pass before the next wave.
-5. **Verify:** blind edge-case tests (`L2`/`L3`), tests and lint, a diff-only audit preferring
-   another provider (two auditors on `L3`), at most 2 fix rounds, then an optional commit and a
-   report.
-
-Runs that edit code, and `--plan-only` runs, save `.claude/auto-build-state.json` (`flags`,
-`completedWaves`, `modifiedFiles`, `remaining`, `blockers`) after each wave or step and keep it
-gitignored. `$auto-build --resume` restores it, lets newly typed flags win and skips completed waves.
-It stops if the file is missing or invalid. When quota runs out, the run saves state so you can
-resume later.
-
-| Flag | Effect |
-|---|---|
-| `--fast` / `--strict` | Cap at `L1` / force `L3`. |
-| `--plan-only` | Stop after the plan. |
-| `--dry-run` | Stop after triage and show the routing. |
-| `--audit-only` | Test and audit the uncommitted diff, then fix if needed. |
-| `--resume` | Continue an interrupted run. |
-| `--commit` | Commit only if the active checks pass. |
-| `--no-audit`, `--no-tests` | Skip the audit / tests. |
-| `--budget` | Cheaper routing; no plan cross-check, blind tests or dual audit. |
-| `--reset-cooldowns` | Clear all locks first. |
-| `--<provider>-only` | Use only that provider's models. |
-
 ## Configuration
 
 `<config dir>/auto-build.config.json` holds `allowlist` (provider to model names), `bannedModels`,
@@ -267,7 +317,8 @@ PreToolUse guards:
   `provider`, `providerInstanceId` or `driverKind`, the provider is inferred from a `claude-`,
   `gpt-` or `gemini-` model name.
 
-Hooks fail open: malformed input, config or cooldown data produces a warning and exit 0. The secret
+Hooks fail open: malformed input or cooldown data produces a warning and exit 0. An invalid config
+produces a warning and falls back to preset defaults, so the allowlist is still enforced. The secret
 and destructive-command guards need no config.
 
 ### Known limits
@@ -288,6 +339,23 @@ skillspector. No Stop hook is installed.
 
 If you already run the PowerShell versions, remove them from `settings.json`. `doctor` warns while
 they are still wired.
+
+## Security and privacy
+
+- No runtime dependencies. The package's own code makes no network requests and has no telemetry.
+- It does run provider CLIs, which may use the network: `sync-models` and `init --probe` send live
+  prompts, and `quota check` runs their login status commands. See [sync-models](#sync-models) for
+  billing and environment caveats.
+- Provider detection only checks that config folders exist; it opens nothing inside them.
+- Probes run in an empty temp directory, and the cooldown reasons they record never quote CLI output.
+- Commands are resolved from absolute `PATH` entries, never the current directory.
+- Install and uninstall protect your edits and refuse symlinked paths inside the config directory,
+  with the exceptions described in [What `init` touches](#what-init-touches).
+- Guard hooks fail open and have [known limits](#known-limits). Do not rely on them as a security
+  boundary.
+
+Report vulnerabilities as described in [SECURITY.md](https://github.com/mirceas94/t3-auto-build/blob/main/SECURITY.md). To contribute,
+see [CONTRIBUTING.md](https://github.com/mirceas94/t3-auto-build/blob/main/CONTRIBUTING.md).
 
 ## Optional tools
 

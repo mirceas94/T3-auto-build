@@ -29,12 +29,13 @@ test('the packed tarball ships the right files and runs through npx', { skip: !w
     return result.stdout;
   };
 
-  const [packed] = JSON.parse(npm(ROOT, 'pack', '--json', '--pack-destination', box.dir));
+  // npm <=11 prints an array, newer npm an object keyed by package name.
+  const [packed] = Object.values(JSON.parse(npm(ROOT, 'pack', '--json', '--pack-destination', box.dir)));
   const files = packed.files.map((file) => file.path);
   for (const needed of ['bin/cli.mjs', 'lib/install.mjs', 'hooks/_shared.mjs', 'core/CLAUDE.md', 'presets/tri-provider.json', 'skills/auto-build/SKILL.md.tmpl', 'LICENSE', 'README.md']) {
     assert.ok(files.includes(needed), needed);
   }
-  assert.deepEqual(files.filter((file) => /^(test|\.claude|\.sandbox)/.test(file)), []);
+  assert.deepEqual(files.filter((file) => /^(test|\.claude|\.sandbox|\.github|assets)\/|^(CONTRIBUTING|SECURITY)\.md$/.test(file)), []);
 
   const tarball = path.join(box.dir, packed.filename);
   npm(box.home, 'exec', '--yes', `--package=${tarball}`, '--', 't3-auto-build', 'init', '--yes');

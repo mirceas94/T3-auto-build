@@ -1,0 +1,63 @@
+name: Bug report
+description: Report something that does not work as documented.
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report vulnerabilities here. Use the private security advisory link instead.
+
+        Redact tokens, keys, email addresses and user names in paths before you submit.
+  - type: input
+    id: version
+    attributes:
+      label: t3-auto-build version
+      description: Output of `t3-auto-build --version` (from a clone, `node bin/cli.mjs --version`). If your version lacks the flag, copy `version` from `package.json`.
+      placeholder: "1.0.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      description: Output of `node --version`.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands or hook input.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output
+      description: Relevant output, for example from `t3-auto-build doctor`. Redact paths and tokens.
+      render: shell
+  - type: checkboxes
+    id: redacted
+    attributes:
+      label: Redaction
+      options:
+        - label: I removed tokens, keys and personal paths from this report.
+          required: true
