@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-11-27
+
+### Added
+
+- Multi-provider `SKILL.md` mirroring (`lib/mirrors.mjs`): `init`, `upgrade`, and `sync-models` now mirror the rendered `auto-build/SKILL.md` into existing provider skill directories (`~/.codex/skills`, `~/.agents/skills`, `~/.gemini/config/skills`, and T3 Code Antigravity `config/skills` profiles, resolving Antigravity junctions inside `$HOME`) by default (`--skill-targets auto`), with `--skill-targets none` and `--skill-targets <dir1>,<dir2>` overrides.
+- Manifest, `doctor`, and `uninstall` mirror lifecycle (`lib/manifest.mjs`, `lib/install.mjs`, `lib/doctor.mjs`): tracked `skillMirrors` hashes, symlink safety via `safePath`, user-edit preservation (`.bak` backups on `--force`), `--modules core` and `uninstall` cleanup, and `doctor` verification.
+
+### Changed
+
+- Skill template (`skills/auto-build/SKILL.md.tmpl`): explicitly requires delegating Triage, Builder, and `L1`–`L3` Cross-Provider Audit and emitting the Step 7 Model Trace whenever `delegate_task` is available (directly or via T3's ACP fallback).
+- Documentation (`README.md`): updated CLI examples to `2.2.0`, fixed clipped `Step 0` Mermaid labels and `L0` vs `L1`–`L3` audit/blind-test flow, documented `--skill-targets` and Claude-only `settings.json` hook scope, fixed `quota clear` synopsis and misplaced `availability mark` snippet, and removed leftover internal hook notes.
+
 ## [2.1.2] - 2026-11-26
 
 ### Changed
@@ -140,6 +152,9 @@ See [Migrating from v1](README.md#migrating-from-v1).
 - Hardened the recursive `rm` guard, cooldown handling, the pre-compact state boundary and
   `sync-models --force`.
 
+[2.2.0]: https://github.com/mirceas94/t3-auto-build/compare/v2.1.2...v2.2.0
+[2.1.2]: https://github.com/mirceas94/t3-auto-build/compare/v2.1.1...v2.1.2
+[2.1.1]: https://github.com/mirceas94/t3-auto-build/compare/v2.1.0...v2.1.1
 [2.1.0]: https://github.com/mirceas94/t3-auto-build/compare/v2.0.2...v2.1.0
 [2.0.2]: https://github.com/mirceas94/t3-auto-build/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/mirceas94/t3-auto-build/compare/v2.0.0...v2.0.1

@@ -57,11 +57,11 @@ Upgrading from 1.x? Read [Migrating from v1](#migrating-from-v1) and the [change
 1. Install into your Claude config directory, naming your plans (see the [tier matrix](#subscription-tiers)):
 
    ```sh
-   npx t3-auto-build@2.1.2 init --claude-tier max --codex-tier plus --antigravity-tier pro --yes
+   npx t3-auto-build@2.2.0 init --claude-tier max --codex-tier plus --antigravity-tier pro --yes
    ```
 
-   Plain `npx t3-auto-build@2.1.2 init` asks instead. From a clone, use `node bin/cli.mjs` in place
-   of `npx t3-auto-build@2.1.2`. `init` prints what it resolved:
+   Plain `npx t3-auto-build@2.2.0 init` asks instead. From a clone, use `node bin/cli.mjs` in place
+   of `npx t3-auto-build@2.2.0`. `init` prints what it resolved:
 
    ```text
    provider    | tier | CLI | models (standard)                                    | scarce overflow                    | max parallel
@@ -78,14 +78,14 @@ Upgrading from 1.x? Read [Migrating from v1](#migrating-from-v1) and the [change
 2. Verify the installation:
 
    ```sh
-   npx t3-auto-build@2.1.2 doctor
+   npx t3-auto-build@2.2.0 doctor
    ```
 
 3. Fill the `12h` availability cache (probes run only when the cache is stale; see
    [Availability checks](#availability-checks)):
 
    ```sh
-   npx t3-auto-build@2.1.2 check-models
+   npx t3-auto-build@2.2.0 check-models
    ```
 
 4. **Restart T3 Code** (and any running Claude Code session). Hooks and `settings.json` changes
@@ -98,13 +98,13 @@ Upgrading from 1.x? Read [Migrating from v1](#migrating-from-v1) and the [change
 Upgrade a legacy v1 config to v2:
 
 ```sh
-npx t3-auto-build@2.1.2 upgrade
+npx t3-auto-build@2.2.0 upgrade
 ```
 
 Verify your installation, hooks, config, and optional tools:
 
 ```sh
-npx t3-auto-build@2.1.2 doctor
+npx t3-auto-build@2.2.0 doctor
 ```
 
 Read-only inspection commands (no config writes, no live probes):
@@ -112,19 +112,19 @@ Read-only inspection commands (no config writes, no live probes):
 - Active quota cooldown locks:
 
   ```sh
-  npx t3-auto-build@2.1.2 quota status
+  npx t3-auto-build@2.2.0 quota status
   ```
 
 - Availability cache age, model status, and drift counts:
 
   ```sh
-  npx t3-auto-build@2.1.2 availability status
+  npx t3-auto-build@2.2.0 availability status
   ```
 
 - Preview model drift promotions without probing or writing:
 
   ```sh
-  npx t3-auto-build@2.1.2 sync-models --apply --dry-run
+  npx t3-auto-build@2.2.0 sync-models --apply --dry-run
   ```
 
 The skill calls `t3-auto-build ...`. From a clone, `npm link` puts that command on `PATH`.
@@ -531,10 +531,10 @@ The weekday (`monday` or `mon`) is the weekly reset day, taken as 00:00 UTC.
 
 v1 configs keep loading, with the retired list enforced. To convert:
 
-1. Run the `2.1.2` package:
+1. Run the `2.2.0` package:
 
    ```sh
-   npx t3-auto-build@2.1.2 upgrade
+   npx t3-auto-build@2.2.0 upgrade
    ```
 
 2. `upgrade` assumes low paid tiers, because a v1 config does not say what you pay for: Claude `pro`,
@@ -542,7 +542,7 @@ v1 configs keep loading, with the retired list enforced. To convert:
 3. Set your real tiers:
 
    ```sh
-   npx t3-auto-build@2.1.2 init --claude-tier max --codex-tier pro-200 --antigravity-tier pro
+   npx t3-auto-build@2.2.0 init --claude-tier max --codex-tier pro-200 --antigravity-tier pro
    ```
 
    Until then no scarce or cross-hosted model is configured.
