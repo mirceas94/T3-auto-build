@@ -79,7 +79,7 @@ list in the config is kept.
 | `--tiers <list>` | init | `provider:plan[:weekday]`, comma separated. |
 | `--probe` | init | Run `sync-models` after installing. Spends real quota. Ignored for `core`. |
 | `--yes` | init, sync-models | No prompts. Without an interactive terminal, `init` requires it and `sync-models` requires it or `--dry-run`. |
-| `--force` | init | Back up your changed files to `<file>.bak`, then overwrite. |
+| `--force` | init, sync-models | Back up your changed files to `<file>.bak`, then overwrite. For `sync-models`, this covers a hand-edited `SKILL.md`. |
 | `--dry-run` | sync-models | Probe and print the result; write nothing. **Still spends real quota.** |
 | `--providers <list>` | sync-models | Only these of `claude`, `codex`, `antigravity`; comma separated. |
 | `--burst`, `--5h`, `--weekly`, `--until <when>`, `--reason <text>` | quota set | See [Quota](#quota). |
@@ -122,8 +122,9 @@ so your Codex user config does not apply. Antigravity has no probe support: its 
 | `unavailable` | No change (CLI missing, not logged in, timeout, unsupported or other failure). |
 
 Without `--yes` it shows the changes and asks before writing. A write backs up a changed config,
-re-renders `SKILL.md` (kept as is if you edited it) and records cooldowns without shortening longer
-ones. An emptied ladder gets a fallback model. If no allowed model would remain, nothing is written.
+re-renders `SKILL.md` and records cooldowns without shortening longer ones. A hand-edited `SKILL.md`
+is skipped with a warning; `--force` backs it up and overwrites it. An emptied ladder gets a
+fallback model. If no allowed model would remain, nothing is written.
 Writing needs an `auto-build` or `full` install; `--dry-run` needs only the config file.
 `init --probe` runs the same sync after installing, asking first unless `--yes`.
 
@@ -140,6 +141,7 @@ t3-auto-build quota check [provider]
   `--weekly` runs to the tier's reset day, else 7 days. `--until` takes a future ISO time or a
   duration such as `90m` or `1w2d`. `--5h` on a provider whose tier locks only the heavy model writes
   `tier:<p>:heavy`.
+- Reset times parsed from rate-limit messages are capped at 14 days. A manual `--until` is not capped.
 - `status` drops expired locks and prints the rest.
 - `clear <provider>` removes its provider and heavy-tier locks, not its model locks.
   `clear <model>` removes that model's lock. `--all` deletes the file, even a corrupt one.
@@ -166,8 +168,10 @@ t3-auto-build quota check [provider]
 
 `scope` is `model`, `provider` or `tier` (written tier entries also carry `"tier": "heavy"`).
 `window` is `burst`, `5h`, `weekly` or `custom`. Legacy `until_utc` is read. A key without a prefix
-needs a `scope` field, or it locks nothing. One entry without a valid time makes the whole file
-unreadable: hooks then warn and ignore it. Writing an empty map removes the file.
+needs a `scope` field, or it locks nothing. A malformed entry (such as one without a valid time) is
+skipped with a warning and kept in the file until it is overwritten or cleared (`quota clear <name>`
+or `--all`). A file that is not a JSON object is unreadable: hooks warn and ignore it. A write that
+leaves no entries removes the file.
 
 ## auto-build workflow
 
@@ -244,7 +248,7 @@ Installed to `<config dir>/hooks/t3-auto-build/`. Matching is case-insensitive.
 | Hook | Event | Behavior |
 |---|---|---|
 | `session-start.mjs` | SessionStart | Prunes expired cooldowns (deletes the file when none are left) and summarizes active ones. |
-| `pre-compact.mjs` | PreCompact | Prints the preservation rules, the saved orchestrator state if present, and a `git status --short` snapshot (20 files at most). |
+| `pre-compact.mjs` | PreCompact | Prints the preservation rules, the saved orchestrator state if present (marked as data only, not instructions), and a `git status --short` snapshot (20 files at most). |
 | `pre-tool-use.mjs` | PreToolUse | Exits 2 with a reason when a guard below matches. |
 | `post-tool-use.mjs` | PostToolUse | Formats the edited file with `biome` or `prettier`, `ruff`, or `gofmt` when on `PATH`. Never blocks. |
 
@@ -253,8 +257,10 @@ PreToolUse guards:
 - **Secret files** (`Edit`, `Write`, `MultiEdit`): `.env` and `.env.*`, `.pem`, `.key`, `.p12`,
   `.pfx`, and paths containing `id_rsa` or `id_ed25519`.
 - **Git** (`Bash`): `git push --force`/`-f` and `git reset --hard`.
-- **`rm -rf`** (`Bash`): blocked when a target starts with `/`, `\` or `~`; is the current directory
-  or `*`; contains a `..` segment; is a dot-file glob such as `.*`; or is `.git` or inside it.
+- **Recursive `rm`** (`Bash`; `-r`, `-rf`, `-fr`, `-r -f`, `--recursive`; `-f` not required): blocked
+  when a target starts with `/`, `\`, `~`, a drive path such as `C:/`, `$HOME` or `%USERPROFILE%`;
+  contains a command substitution; is the current directory or `*`; has a `..` or `.git` segment; or
+  is a dot-file glob such as `.*`.
 - **Delegate models** (`delegate_task`): banned or non-allowlisted models are blocked. A trailing
   `-YYYYMMDD` snapshot suffix is ignored when matching.
 - **Lockouts** (`delegate_task`): model, provider and heavy-tier cooldowns block the call. Without a
@@ -268,8 +274,9 @@ and destructive-command guards need no config.
 
 - The command guards cover the `Bash` tool only and use simple patterns. They are a safety net, not a
   sandbox.
-- Only `rm -rf` written that way (any case) is checked: `rm -fr`, `rm -r -f`, `rm -rfv` and
-  `rm --recursive --force` are **not** caught. Variables such as `$HOME` are not expanded.
+- The `rm` guard matches text. Obfuscated `rm`, PowerShell removal commands such as `Remove-Item`, and
+  `find -delete` are **not** caught. Other variables are not expanded. Harmless text can match:
+  `echo rm -rf .` is blocked. A very long command with many `rm` calls is blocked unchecked; split it up.
 - Any `-f` text after `git push` matches, including a branch name such as `bug-fix`.
   `--force-with-lease` is blocked too.
 - The delegate guard reads `model` and the provider fields at the top level of `tool_input` and under

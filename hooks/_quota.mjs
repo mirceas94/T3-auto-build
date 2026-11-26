@@ -1,10 +1,12 @@
 // Cooldown (rate limit / quota lockout) state shared by the installed hooks. Node >=18, node:* only.
 import fs from 'node:fs';
 import path from 'node:path';
-import { inferProvider, isObject, isStringList, modelKeys, normalizeName, parseJson } from './_shared.mjs';
+import { inferProvider, isObject, isStringList, modelKeys, normalizeName, parseJson, warn } from './_shared.mjs';
 
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
+// A parsed reset time comes from message text, so it can never lock for longer than this.
+const MAX_LOCK = 14 * DAY;
 
 // T3 provider ids to provider keys. Custom instances (codex-2) resolve by driverKind or this prefix.
 const PROVIDERS = new Map([['claudeagent', 'claude'], ['claude', 'claude'], ['codex', 'codex'], ['antigravity', 'antigravity']]);
@@ -37,8 +39,8 @@ const canonicalAll = (data) => {
   return Object.fromEntries(Object.entries(data).map(([key, value]) => [key, canonical(key, value)]));
 };
 
-/** {} when the file is missing or blank; throws when it is malformed. */
-export function readCooldowns(file) {
+/** The file's raw map: {} when it is missing or blank; throws when it is not a JSON object. */
+function readRaw(file) {
   let text;
   try {
     text = fs.readFileSync(file, 'utf8').replace(/^﻿/, '');
@@ -46,12 +48,37 @@ export function readCooldowns(file) {
     if (error.code === 'ENOENT') return {};
     throw error;
   }
-  return text.trim() ? canonicalAll(parseJson(text)) : {};
+  const data = text.trim() ? parseJson(text) : {};
+  if (!isObject(data)) throw new TypeError('cooldown file is not a JSON object');
+  return data;
 }
 
-/** Atomic replace; an empty map removes the file. */
-export function writeCooldowns(file, data) {
-  const entries = canonicalAll(data);
+const isValid = (key, value) => {
+  try {
+    return Boolean(canonical(key, value));
+  } catch {
+    return false;
+  }
+};
+
+/** The valid entries; each invalid one is passed to onInvalid (by default a warning) and skipped. */
+export function readCooldowns(file, onInvalid = (key) =>
+  warn(`ignoring ${path.basename(file)} entry "${clip(key, 60)}" (invalid)`)) {
+  return Object.fromEntries(Object.entries(readRaw(file)).flatMap(([key, value]) => {
+    if (isValid(key, value)) return [[key, canonical(key, value)]];
+    onInvalid(key);
+    return [];
+  }));
+}
+
+/**
+ * Atomic replace; an empty map removes the file. Invalid entries already in the file are kept as they are,
+ * unless data replaces their key or `remove` names it.
+ */
+export function writeCooldowns(file, data, { remove = [] } = {}) {
+  const invalid = Object.entries(readRaw(file))
+    .filter(([key, value]) => !Object.hasOwn(data, key) && !remove.includes(key) && !isValid(key, value));
+  const entries = { ...canonicalAll(data), ...Object.fromEntries(invalid) };
   if (Object.keys(entries).length === 0) {
     fs.rmSync(file, { force: true });
     return;
@@ -102,7 +129,7 @@ export function isLocked(data, { provider, model, config } = {}, now = Date.now(
 }
 
 // File text goes into the session context, so it is kept to one short line.
-const clip = (text, max) => String(text).replace(/\s+/g, ' ').slice(0, max);
+const clip = (text, max) => String(text).replace(/[\s\p{Cc}\p{Cf}]+/gu, ' ').slice(0, max);
 
 /** At most 3 lines describing the active lockouts; [] when there are none. */
 export function summarize(data, now = Date.now()) {
@@ -169,9 +196,9 @@ function weekdayAt(day, now) {
 export function parseRateLimit(text, { now = Date.now(), sharing, resetDay, retryAfter } = {}) {
   const message = String(text ?? '');
   const at = Number(now);
-  // The first candidate that is a real future time wins; the last one is the default.
+  // The first candidate in the future wins, capped at MAX_LOCK; the last one is the default.
   const result = (window, scope, ...candidates) => ({
-    window, scope, until: new Date(candidates.find((time) => time > at && time < 8.64e15)).toISOString(),
+    window, scope, until: new Date(Math.min(candidates.find((time) => time > at), at + MAX_LOCK)).toISOString(),
   });
   const day = message.match(RESET_DAY)?.[1];
   if (WEEKLY.test(message) || day) {

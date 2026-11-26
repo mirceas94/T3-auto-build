@@ -30,12 +30,14 @@ Options:
   --tiers <list>      provider:plan[:weekday], comma separated, e.g. claude:max,codex:pro
   --probe             run sync-models after installing (spends real quota)
   --yes               do not prompt
-  --force             back up your edited files to .bak, then overwrite
   sync-models only:
   --dry-run           show the result without writing. Note: sync-models --dry-run
                       still executes live probes (spends real quota) but writes nothing.
   --providers <list>  only these providers, comma separated
   --yes               write without asking
+  init and sync-models:
+  --force             back up your edited files to .bak, then overwrite. sync-models applies it
+                      to a hand-edited SKILL.md (default: skip it with a warning)
   quota set only (one window, default --burst):
   --burst             10 minutes
   --5h                5 hours
@@ -51,7 +53,7 @@ const COMMAND_FLAGS = {
   init: ['preset', 'modules', 'compaction', 'tiers', 'probe', 'yes', 'force'],
   doctor: [],
   uninstall: [],
-  'sync-models': ['dry-run', 'providers', 'yes'],
+  'sync-models': ['dry-run', 'providers', 'yes', 'force'],
   'quota set': [...QUOTA_WINDOWS, 'until', 'reason'],
   'quota status': [],
   'quota clear': ['all'],
@@ -89,7 +91,7 @@ function parseProviders(value) {
   return names.map((name) => parseChoice(name, Object.keys(HEAVY_MODELS), 'provider'));
 }
 
-async function sync(target, { yes = false, dryRun = false, providers }) {
+async function sync(target, { yes = false, dryRun = false, force = false, providers }) {
   if (!yes && !dryRun && !process.stdin.isTTY) {
     throw new CliError('no interactive terminal; re-run with --yes (or --dry-run); nothing was written', 2);
   }
@@ -100,14 +102,14 @@ async function sync(target, { yes = false, dryRun = false, providers }) {
   }
   let declined = false;
   const confirm = async ({ allowlist, planRestricted, cooldowns, changed }) => {
-    if (changed || Object.keys(cooldowns).length) {
+    if (force || changed || Object.keys(cooldowns).length) {
       console.log(JSON.stringify({ allowlist, planRestricted, cooldowns }, null, 2));
       if (await confirmYes(`Write these changes to ${target}? [y/N] `)) return true;
     }
     declined = true;
     return false;
   };
-  const summary = await syncModels(target, { providers, dryRun, yes, confirm });
+  const summary = await syncModels(target, { providers, dryRun, yes, force, confirm });
   if (dryRun) {
     const { allowlist, planRestricted, cooldowns, changed } = summary;
     console.log(JSON.stringify({ allowlist, planRestricted, cooldowns, changed }, null, 2));
@@ -163,7 +165,7 @@ async function main(argv) {
   else if (command === 'uninstall') uninstall(target);
   else if (command === 'sync-models') {
     const providers = flags.providers === undefined ? undefined : parseProviders(flags.providers);
-    await sync(target, { yes: flags.yes, dryRun: flags['dry-run'], providers });
+    await sync(target, { yes: flags.yes, dryRun: flags['dry-run'], force: flags.force, providers });
   } else await quota(command.slice('quota '.length), target, rest[0], flags);
 }
 
