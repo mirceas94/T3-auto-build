@@ -1,6 +1,6 @@
 {
   "name": "t3-auto-build",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Cross-platform installer and $auto-build orchestration suite for T3 Code: subscription-aware cross-provider routing with quota and availability tracking.",
   "keywords": [
     "claude-code",
