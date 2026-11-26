@@ -3,7 +3,7 @@ name: auto-build
 description: Smart-lean multi-model orchestrator for T3 Code using delegate_task with shared REPO_BRIEF and cached repo-profile, task-shape/risk L0-L3 routing, wave-based parallel builds, resumable state, diff-scoped BLOCKER/NIT audits, strict output budgets, targeted-first tests, lint-gated L3 dual audit, opposite-provider blind edge-case tests, evidence-only rejections, oscillation escalation, follow-up auto-scaling, full inline flag controls, cross-thread quota lockouts, and full-spectrum cross-provider failover across {{modelCount}} allowlisted models.
 ---
 
-You are the autonomous orchestrator for T3 Code, regardless of which allowlisted model started this thread. Coordinate the run and execute the full pipeline using native `delegate_task` calls along the configured ladders (rather than doing implementation edits yourself) without pausing to ask the user between steps (unless `--plan-only` or `--dry-run` is specified).
+You are the autonomous orchestrator for T3 Code, regardless of which allowlisted model started this thread. Coordinate the run and execute the full pipeline using native `delegate_task` calls along the configured ladders (rather than doing implementation edits yourself) without pausing to ask the user between steps (unless `--plan-only` or `--dry-run` is specified). If `delegate_task` is available (directly or via T3's ACP fallback), you MUST delegate Triage, Builder, and `L1`–`L3` Cross-Provider Audit and emit the Step 7 Model Trace; if `delegate_task` is unavailable in this environment, report that upfront rather than silently editing files yourself.
 
 Rendered by t3-auto-build from `{{configPath}}`. Edit that file and re-run `t3-auto-build init` instead of editing this skill.
 

@@ -6,6 +6,7 @@ import { doctor } from '../lib/doctor.mjs';
 import { applyDrift, checkModels, markAvailability, readAvailabilityFile } from '../lib/discover.mjs';
 import { PRESETS, install, syncConfig, uninstall, upgrade, wantsAuto } from '../lib/install.mjs';
 import { MODULES, readManifest } from '../lib/manifest.mjs';
+import { parseSkillTargets } from '../lib/mirrors.mjs';
 import { CliError, PACKAGE_ROOT, resolveTarget } from '../lib/paths.mjs';
 import { syncModels } from '../lib/probe.mjs';
 import { CATALOG, PROVIDERS } from '../lib/plans.mjs';
@@ -46,6 +47,7 @@ init only:
   --allow-usage-credits        allow tiers billed per token
   --allow-fast-modes           permit fast/priority service modes
   --verified-org               mark the account as verified organization
+  --skill-targets <mode|list>  auto | none | comma-separated skill roots to mirror SKILL.md
   --probe                      run sync-models after installing
 
 check-models only:
@@ -82,10 +84,10 @@ Examples:
   t3-auto-build quota set antigravity:claude-opus-5-5 --pool third-party-claude
   Overflow to cross-hosted models requires an explicit provider, e.g. antigravity:claude-opus-5-5.`;
 
-const VALUE_FLAGS = ['target', 'preset', 'modules', 'compaction', 'tiers', 'providers', 'until', 'reason', 'parent', 'claude-tier', 'codex-tier', 'antigravity-tier', 'ttl', 'pool'];
+const VALUE_FLAGS = ['target', 'preset', 'modules', 'compaction', 'tiers', 'providers', 'until', 'reason', 'parent', 'claude-tier', 'codex-tier', 'antigravity-tier', 'ttl', 'pool', 'skill-targets'];
 const SWITCHES = ['yes', 'force', 'help', 'version', 'probe', 'dry-run', 'all', 'auto', 'refresh', 'probe-scarce', 'recheck-locks', 'apply', 'json', 'allow-usage-credits', 'allow-fast-modes', 'verified-org', ...QUOTA_WINDOWS];
 const COMMAND_FLAGS = {
-  init: ['preset', 'modules', 'compaction', 'tiers', 'probe', 'yes', 'force', ...Object.values(TIER_FLAGS).map((f) => f.slice(2)), 'parent', 'allow-usage-credits', 'allow-fast-modes', 'verified-org'],
+  init: ['preset', 'modules', 'compaction', 'tiers', 'probe', 'yes', 'force', ...Object.values(TIER_FLAGS).map((f) => f.slice(2)), 'parent', 'allow-usage-credits', 'allow-fast-modes', 'verified-org', 'skill-targets'],
   upgrade: ['yes'], doctor: [], uninstall: [],
   'check-models': ['refresh', 'probe-scarce', 'recheck-locks', 'json'],
   'sync-models': ['dry-run', 'providers', 'yes', 'auto', 'force', 'refresh', 'probe-scarce', 'apply'],
@@ -164,6 +166,7 @@ async function init(target, flags) {
     tiers: flags.tiers === undefined ? undefined : parseTierSpec(flags.tiers),
     claudeTier: flags['claude-tier'], codexTier: flags['codex-tier'], antigravityTier: flags['antigravity-tier'],
     parent: flags.parent, allowUsageCredits: flags['allow-usage-credits'], allowFastModes: flags['allow-fast-modes'], verifiedOrg: flags['verified-org'],
+    skillTargets: parseSkillTargets(flags['skill-targets']),
   };
   for (const provider of PROVIDERS) {
     const field = { claude: 'claudeTier', codex: 'codexTier', antigravity: 'antigravityTier' }[provider];

@@ -7,7 +7,7 @@ test('help documents every command and W2b flag', (t) => {
   const s = sandbox(t);
   const result = s.cli('--help');
   assert.equal(result.status, 0);
-  for (const text of ['init', 'upgrade', 'check-models', 'sync-models', 'availability mark', 'availability status', 'quota set', 'quota status', 'quota clear', 'quota check', 'doctor', 'uninstall', '--target', '--yes', '--claude-tier', '--codex-tier', '--antigravity-tier', '--parent', '--allow-usage-credits', '--allow-fast-modes', '--verified-org', '--probe', '--refresh', '--probe-scarce', '--json', '--auto', '--apply', '--dry-run', '--providers', '--force', '--ttl', '--reason', '--pool', '--burst', '--5h', '--weekly', '--until', '--all', 'cross-hosted']) {
+  for (const text of ['init', 'upgrade', 'check-models', 'sync-models', 'availability mark', 'availability status', 'quota set', 'quota status', 'quota clear', 'quota check', 'doctor', 'uninstall', '--target', '--yes', '--claude-tier', '--codex-tier', '--antigravity-tier', '--parent', '--allow-usage-credits', '--allow-fast-modes', '--verified-org', '--skill-targets', '--probe', '--refresh', '--probe-scarce', '--json', '--auto', '--apply', '--dry-run', '--providers', '--force', '--ttl', '--reason', '--pool', '--burst', '--5h', '--weekly', '--until', '--all', 'cross-hosted']) {
     assert.ok(result.stdout.includes(text), `help missing ${text}`);
   }
 });

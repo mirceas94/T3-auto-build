@@ -328,14 +328,14 @@ Triage sizes the task, `L2`/`L3` plan and build in waves (foundations, core, tes
 
 ```mermaid
 flowchart TD
-  S["$auto-build<br/>request"] --> S0["Step 0<br/>check-models &amp; locks<br/>git baseline / resume"]
+  S["$auto-build<br/>request"] --> S0["Step 0<br/>check &amp; locks<br/>git / resume"]
   S0 --> T["Triage<br/>REPO_BRIEF<br/>level &amp; shape"]
   T -->|"L0 / L1"| B1["Single builder"]
   T -->|"L2 / L3"| P["Plan<br/>L3 cross-check"]
   P --> W1["Wave 1<br/>foundations"]
   W1 --> W2["Wave 2<br/>core"]
-  W2 --> W3["Wave 3<br/>tests &amp; docs"]
-  B1 --> V["Verify<br/>tests, lint<br/>diff audit"]
+  W2 --> W3["Wave 3<br/>blind tests<br/>&amp; docs"]
+  B1 --> V["Verify<br/>tests &amp; lint<br/>audit (L1-L3)"]
   W3 --> V
   V -->|"blockers"| F["Fix round<br/>(max 2)"]
   F --> V
@@ -392,13 +392,21 @@ restrictions):
 | General multi-file or UI orchestration | `claude-sonnet-5-5`, `gemini-4-neon` |
 | Deeper debugging, architecture, or high-risk `L2`/`L3` coordination | `gpt-6.1-terra`, `gpt-6.1-sol`, `claude-opus-5-5`, `gemini-4-carbon` |
 
-Two practical nuances to keep in mind:
+Three practical nuances to keep in mind:
 
-- **Hook enforcement scope:** [`pre-tool-use.mjs`](#hooks) enforces model allowlist, ban,
-  restriction, speed-mode, and cooldown guards on `delegate_task` calls (plus secret-file and
+- **Multi-provider skill mirroring:** `init`, `upgrade`, and `sync-models` install the canonical
+  `SKILL.md` in `<config dir>/skills/auto-build/SKILL.md` and mirror it to existing provider skill
+  directories (`~/.codex/skills`, `~/.agents/skills`, `~/.gemini/config/skills`, and T3 Code
+  Antigravity `config/skills` profiles) by default (`--skill-targets auto`). Use
+  `--skill-targets none` to disable mirroring or `--skill-targets <dir1>,<dir2>` for explicit
+  directories.
+- **Hook enforcement scope:** [`pre-tool-use.mjs`](#hooks) is wired through `~/.claude/settings.json`
+  and runs on Claude sessions (including Claude delegated children). It enforces model allowlist,
+  ban, restriction, speed-mode, and cooldown guards on `delegate_task` calls (plus secret-file and
   destructive-command guards on `Edit`, `Write`, `MultiEdit`, and `Bash`), not on T3 Code's UI
-  thread model picker. Choosing a non-allowlisted or locked model in the picker is not blocked by
-  the hook itself; model guards trigger when `delegate_task` runs.
+  thread model picker. Non-Claude starting threads (Codex or Antigravity) follow the mirrored
+  `SKILL.md` and `t3-auto-build check-models` / `quota status`, but `~/.claude/settings.json` hooks
+  do not intercept the non-Claude parent turn itself.
 - **Follow-up messages without `$auto-build`:** Subsequent messages in the same thread that omit
   `$auto-build` follow the **Follow-Up Refinement Rule** rather than always launching a fresh full
   `$auto-build` pipeline—questions are answered directly from thread context, `L0` micro-tweaks
@@ -451,6 +459,7 @@ t3-auto-build --version | --help
 | `--allow-usage-credits` | init | Include per-token `api` tiers. Needs a tier or a v2 config. |
 | `--allow-fast-modes` | init | Permit fast or priority service modes. Needs a tier or a v2 config. |
 | `--verified-org` | init | Record `verifiedOrg: true` in a v2 config (informational metadata; not used by routing or hooks). |
+| `--skill-targets <mode\|list>` | init | `auto` (default: mirror `SKILL.md` to existing Codex, `.agents`, and T3 Antigravity skill roots), `none`, or comma-separated skill root directories. |
 | `--probe` | init | Run `sync-models` after installing. Spends real quota. Ignored for `core`. |
 | `--force` | init, sync-models | Back up your changed files to `<file>.bak`, then overwrite. For `sync-models`, this covers a hand-edited `SKILL.md`. |
 | `--refresh` | check-models, sync-models | Ignore the probe cache TTL. `sync-models` without `--apply` always probes. |
@@ -689,7 +698,7 @@ A v1 config has no `schemaVersion` and may also use `tiers` and `planRestricted`
 
 - **Managed files** (in `<config dir>`):
   - **Core (`full`, `core`):** `CLAUDE.md`, `rules/code-quality.md`, `commands/fix.md`, `commands/review.md`, `commands/handover.md`.
-  - **Auto-build (`full`, `auto-build`):** `skills/auto-build/SKILL.md`, `auto-build.config.json`, `hooks/t3-auto-build/{session-start,pre-compact,pre-tool-use,post-tool-use,_shared,_quota}.mjs`, and `settings.json`.
+  - **Auto-build (`full`, `auto-build`):** `skills/auto-build/SKILL.md`, `auto-build.config.json`, `hooks/t3-auto-build/{session-start,pre-compact,pre-tool-use,post-tool-use,_shared,_quota}.mjs`, `settings.json`, and mirrored `auto-build/SKILL.md` copies in active `--skill-targets` roots.
   - **Manifest (all modules):** `t3-auto-build.manifest.json`.
 - Files that exist and differ from what was installed are skipped with a warning. This includes hook
   files, which are still wired. `--force` backs them up first (`.bak`, then `.bak.1`, so an earlier
