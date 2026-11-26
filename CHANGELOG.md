@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.2] - 2026-11-26
+
+### Changed
+
+- Documentation (`README.md`): added a Table of Contents, split multi-command Quick Start and model-drift snippets into dedicated copy-pasteable blocks, compacted the Mermaid workflow diagram labels to avoid clipping, and broke dense `sync-models`, workflow, and cooldown prose into scannable bullets.
+
+## [2.1.1] - 2026-11-26
+
+### Changed
+
+- Documentation (`README.md`): aligned onboarding, `12h` availability cache and safe-by-default model drift (`--apply --dry-run`), `sync-models` v2 candidate/probe behavior, `gpt-6.1-terra`/`gpt-6.1-sol` starting models, custom-instance cooldown isolation, and `Troubleshooting & Common Gotchas` with `2.1.0`.
+
 ## [2.1.0] - 2026-11-26
 
 ### Fixed
