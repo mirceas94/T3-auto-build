@@ -374,3 +374,13 @@ test('doctor warns, without failing, when rg and sg are absent', (t) => {
   assert.match(result.stdout, /warn rg not found\. Install: winget .*brew .*apt /);
   assert.match(result.stdout, /warn sg not found\. Install: winget .*brew .*npm /);
 });
+
+test('init records the package version and doctor reports it', (t) => {
+  const box = sandbox(t);
+  ok(box.cli('init', '--yes'));
+  const manifest = json(box.path(MANIFEST));
+  assert.match(box.cli('doctor').stdout, new RegExp(`ok +installed version ${manifest.packageVersion}`));
+  delete manifest.packageVersion;
+  write(box.path(MANIFEST), manifest);
+  assert.match(box.cli('doctor').stdout, /warn +installed version not recorded/);
+});

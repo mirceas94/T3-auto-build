@@ -7,7 +7,7 @@ import { applyDrift, checkModels, markAvailability, readAvailabilityFile } from 
 import { PRESETS, install, syncConfig, uninstall, upgrade, wantsAuto } from '../lib/install.mjs';
 import { MODULES, readManifest } from '../lib/manifest.mjs';
 import { parseSkillTargets } from '../lib/mirrors.mjs';
-import { CliError, PACKAGE_ROOT, resolveTarget } from '../lib/paths.mjs';
+import { CliError, PACKAGE_VERSION, resolveTarget } from '../lib/paths.mjs';
 import { syncModels } from '../lib/probe.mjs';
 import { CATALOG, PROVIDERS } from '../lib/plans.mjs';
 import { confirmYes, initPrompts, parseChoice, parsePercent, parseTierSpec, TIER_FLAGS } from '../lib/prompt.mjs';
@@ -231,7 +231,7 @@ function quota(action, target, subject, flags) {
 async function main(argv) {
   const { flags, positional } = parseArgs(argv);
   if (flags.help) return console.log(USAGE);
-  if (flags.version) return console.log(JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT, 'package.json'), 'utf8')).version);
+  if (flags.version) return console.log(PACKAGE_VERSION);
   const [first, ...rest] = positional;
   const command = first === 'quota' || first === 'availability' ? `${first} ${rest.shift()}` : first;
   const [min, max] = ARGUMENTS[command] ?? [0, 0];

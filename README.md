@@ -93,6 +93,18 @@ Upgrading from 1.x? Read [Migrating from v1](#migrating-from-v1) and the [change
 
 5. In a T3 Code thread, run `$auto-build <task>`. See [workflow](#auto-build-workflow) for flags.
 
+### Update an existing install
+
+Run `init` from the new package version. With `--yes` and no tier flags, it keeps your current tiers:
+
+```sh
+npx t3-auto-build@2.3.0 init --yes
+```
+
+Managed files you edited are skipped with a warning (`--force` backs them up and overwrites them).
+Restart T3 Code afterwards. `upgrade` does not update to a new package version. The `doctor` command
+of the same package version prints `installed version <version>`.
+
 ### Upgrade & read-only inspection
 
 Upgrade a legacy v1 config to v2:
@@ -439,7 +451,7 @@ t3-auto-build --version | --help
 | `sync-models` | Probes models and updates the allowlist, or applies drift with `--apply`. |
 | `availability mark\|status` | Sets or shows model availability. |
 | `quota set\|status\|clear\|check` | Manages cooldown locks. |
-| `doctor` | Checks files, config, hook wiring and smoke tests, cache age, configured tiers against CLI binaries, drift and optional tools. |
+| `doctor` | Checks the installed version, files, config, hook wiring and smoke tests, cache age, configured tiers against CLI binaries, drift and optional tools. |
 | `uninstall` | Removes what `init` installed and the availability cache. Keeps files you changed and the cooldown file. |
 
 | Option | Applies to | Meaning |

@@ -10,7 +10,8 @@ All notable changes to this project are documented here. The format follows
 
 - Skill template (`skills/auto-build/SKILL.md.tmpl`): builder rules (reuse existing code and the standard library, no speculative abstractions, list assumptions), terse sub-agent replies, a `Not checked:` line in the final report, and optional Context7 verification of third-party library APIs.
 - Core rules (`core/CLAUDE.md`): state assumptions and tradeoffs, reuse before adding code, simplest design.
-- Documentation (`README.md`): Context7 note under Optional tools; CLI examples updated to `2.3.0`.
+- Installed version: `init` and `upgrade` record the package version in the manifest, and `doctor` prints it (warning when it differs from the running CLI).
+- Documentation (`README.md`): Context7 note under Optional tools; how to update an existing install; CLI examples updated to `2.3.0`.
 
 ## [2.2.0] - 2026-11-27
 
