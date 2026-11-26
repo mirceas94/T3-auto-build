@@ -41,9 +41,9 @@ test('tiers derive sharing mode and heavy model defaults', () => {
   assert.equal(tiers.codex.sharing, 'heavy-tier-only');
   assert.equal(tiers.antigravity.sharing, 'heavy-tier-only');
   assert.equal(tiers.codex.resetDay, 'monday');
-  assert.deepEqual(tiers.claude.heavyModels, ['Claude Opus 5.5']);
-  assert.deepEqual(tiers.codex.heavyModels, ['gpt-6-luna']);
-  assert.deepEqual(tiers.antigravity.heavyModels, ['Gemini 4 Carbon']);
+  assert.deepEqual(tiers.claude.heavyModels, ['claude-fable-5-2']);
+  assert.deepEqual(tiers.codex.heavyModels, ['gpt-6-astra']);
+  assert.deepEqual(tiers.antigravity.heavyModels, []);
 });
 
 test('provider tiers that share limits lock at provider scope', () => {

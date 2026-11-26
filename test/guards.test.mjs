@@ -37,6 +37,7 @@ test('delegate guard blocks active model, provider, and heavy tier locks with re
 test('model prefix infers provider and dated allowlist IDs still obey banned models', (t) => {
   const box = sandbox(t);
   assert.equal(box.cli('init', '--yes').status, 0);
+  write(box.path('auto-build.config.json'), { bannedModels: ['Fable/Mythos'] });
   const until = new Date(Date.now() + 60 * 60_000).toISOString();
   write(box.path('auto-build-cooldowns.json'), {
     'provider:codex': { scope: 'provider', window: 'weekly', until, reason: 'cap' },

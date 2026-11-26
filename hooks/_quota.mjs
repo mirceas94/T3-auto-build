@@ -1,17 +1,18 @@
 // Cooldown (rate limit / quota lockout) state shared by the installed hooks. Node >=18, node:* only.
 import fs from 'node:fs';
 import path from 'node:path';
-import { inferProvider, isObject, isStringList, modelKeys, normalizeName, parseJson, warn } from './_shared.mjs';
+import {
+  canonicalProvider, inferProvider, isObject, isStringList, modelKeys, normalizeName, parseJson,
+  resolveTarget, warn,
+} from './_shared.mjs';
 
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
 // A parsed reset time comes from message text, so it can never lock for longer than this.
 const MAX_LOCK = 14 * DAY;
 
-// T3 provider ids to provider keys. Custom instances (codex-2) resolve by driverKind or this prefix.
-const PROVIDERS = new Map([['claudeagent', 'claude'], ['claude', 'claude'], ['codex', 'codex'], ['antigravity', 'antigravity']]);
-const compact = (id) => id.toLowerCase().replace(/[^a-z0-9]/g, '');
 const HEAVY_MODELS = { claude: ['Claude Opus 5.5'], codex: ['gpt-6-luna'], antigravity: ['Gemini 4 Carbon'] };
+export const SCARCE_POOL = { claude: 'fable', codex: 'astra', antigravity: 'third-party-claude' };
 
 const untilOf = (entry) => {
   const text = entry?.until ?? entry?.until_utc;
@@ -54,6 +55,9 @@ function readRaw(file) {
 }
 
 const isValid = (key, value) => {
+  const validKey = /^(?:model:[^:]+(?::[^:]+)?|provider:[^:]+|tier:[^:]+:[a-z0-9-]+)$/i.test(key)
+    || !/^(?:model|provider|tier):/i.test(key);
+  if (!validKey) return false;
   try {
     return Boolean(canonical(key, value));
   } catch {
@@ -95,29 +99,67 @@ export function prune(data, now = Date.now()) {
   return { kept: split(true), removed: split(false) };
 }
 
-function matches(key, scope, { provider, model, config }) {
-  if (scope === 'provider') {
-    const aliasOf = (id) => [...PROVIDERS.keys()].find((prefix) => compact(id).startsWith(prefix));
-    // A custom instance id ("work") says nothing about its provider, so the model decides too.
-    const ids = [provider, !(provider && aliasOf(provider)) && inferProvider(model)].filter(Boolean);
-    // Only exact aliases apply to the key, so a "codex-2" cooldown does not block every Codex instance.
-    const name = key.replace(/^provider:/i, '');
-    const wanted = normalizeName(PROVIDERS.get(compact(name)) ?? name);
-    return ids.flatMap((id) => [id, PROVIDERS.get(aliasOf(id)) ?? id]).some((id) => normalizeName(id) === wanted);
+function matches(key, scope, { provider, providers, model, config }) {
+  const declarations = [...new Set((providers ?? (provider === undefined ? [] : [provider]))
+    .filter((id) => typeof id === 'string' && id.trim() !== ''))];
+  const declared = [...new Set(declarations.map(canonicalProvider).filter(Boolean))];
+  const inferred = inferProvider(model);
+  const targets = [];
+  const target = resolveTarget({ providers: declarations, model }, config);
+  targets.push(target);
+  // A conflict is blocked separately by pre-tool-use, but cooldowns remain conservative for both sides.
+  const candidates = target.conflict ? [...new Set([...declared, inferred].filter(Boolean))] : [];
+  for (const candidate of candidates) {
+    targets.push(resolveTarget({ providers: [candidate], model }, config));
   }
-  if (!model) return false;
-  const keys = modelKeys(model, config);
-  const hit = (name) => [...modelKeys(name, config)].some((k) => keys.has(k));
-  if (scope === 'model') return hit(key.replace(/^model:/i, ''));
-  const tier = scope === 'tier' && key.match(/^tier:([^:]+):heavy$/i)?.[1].toLowerCase();
+
+  if (scope === 'provider') {
+    const wantedRaw = key.replace(/^provider:/i, '');
+    const compactKey = wantedRaw.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const wantedProvider = ['claude', 'claudeagent', 'codex', 'antigravity'].includes(compactKey)
+      ? canonicalProvider(wantedRaw) : null;
+    const wanted = normalizeName(wantedRaw);
+    const ids = new Set([
+      ...declarations.map((id) => normalizeName(id)),
+      ...declared,
+      ...targets.map((item) => item.provider).filter(Boolean),
+      // Unknown aliases may still carry a model from a known provider.
+      ...(!declared.length || target.conflict ? [inferred] : []),
+    ].filter(Boolean).map(normalizeName));
+    return (wantedProvider ? ids.has(wantedProvider) : ids.has(wanted));
+  }
+
+  const modelMatch = (name) => {
+    if (!model) return false;
+    const keys = modelKeys(model, config);
+    return [...modelKeys(name, config)].some((candidate) => keys.has(candidate));
+  };
+  if (scope === 'model') {
+    const match = key.match(/^model:([^:]+):(.+)$/i);
+    if (match) {
+      const wantedProvider = canonicalProvider(match[1]) ?? normalizeName(match[1]);
+      return targets.some((item) => item.provider
+        && normalizeName(item.provider) === wantedProvider && modelMatch(match[2]));
+    }
+    return modelMatch(key.replace(/^model:/i, ''));
+  }
+
+  const tier = key.match(/^tier:([^:]+):([a-z0-9-]+)$/i);
   if (!tier) return false;
-  const configured = config?.tiers?.[tier]?.heavyModels;
-  return (isStringList(configured) ? configured : HEAVY_MODELS[tier] ?? []).some(hit);
+  const [, providerKey, pool] = tier;
+  const wantedProvider = canonicalProvider(providerKey) ?? normalizeName(providerKey);
+  if (pool.toLowerCase() === 'heavy') {
+    const configured = config?.tiers?.[providerKey.toLowerCase()]?.heavyModels;
+    const legacyModels = isStringList(configured) ? configured : HEAVY_MODELS[providerKey.toLowerCase()] ?? [];
+    return legacyModels.some(modelMatch) || targets.some((item) => normalizeName(item.provider ?? '') === wantedProvider
+      && item.pool === SCARCE_POOL[providerKey.toLowerCase()]);
+  }
+  return targets.some((item) => normalizeName(item.provider ?? '') === wantedProvider && item.pool === pool.toLowerCase());
 }
 
 /** The matching active lock that ends last, or null. A missing or unknown provider is inferred from the model. */
-export function isLocked(data, { provider, model, config } = {}, now = Date.now()) {
-  const request = { provider, model, config };
+export function isLocked(data, { provider, providers, model, config } = {}, now = Date.now()) {
+  const request = { provider, providers, model, config };
   let lock = null;
   for (const [key, value] of Object.entries(data)) {
     const until = untilOf(value);

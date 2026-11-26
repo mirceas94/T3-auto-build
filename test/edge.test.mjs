@@ -35,10 +35,10 @@ function install(s, ...args) {
   return result;
 }
 
-function t3Delegate(model) {
+function t3Delegate(model, providerInstanceId = 'claudeAgent') {
   return {
     tool_name: 'mcp__t3-code__delegate_task',
-    tool_input: { task: 'x', target: { providerInstanceId: 'claudeAgent', model, options: { effort: 'high' } } },
+    tool_input: { task: 'x', target: { providerInstanceId, model, options: { effort: 'high' } } },
   };
 }
 
@@ -190,7 +190,7 @@ test('pre-tool-use allows benign actions and fails open for malformed cooldown d
     { tool_name: 'Read', tool_input: { file_path: 'src/app.mjs' } },
     { tool_name: 'Bash', tool_input: { command: 'git status --short' } },
     t3Delegate('claude-sonnet-5-5'),
-    t3Delegate('gpt-6-luna'),
+    t3Delegate('gpt-6-luna', 'codex'),
   ]) assert.equal(hook(s, 'pre-tool-use', payload).status, 0);
 });
 

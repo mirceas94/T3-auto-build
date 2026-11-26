@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 360" width="1280" height="360" role="img">
-  <title>t3-auto-build: multi-model orchestration with safety guards for T3 Code</title>
+  <title>t3-auto-build: subscription-aware multi-model routing with safety guards for T3 Code</title>
   <rect x="2" y="2" width="1276" height="356" rx="24" fill="#0f172a" stroke="#475569" stroke-width="2"/>
   <g font-family="ui-monospace,SFMono-Regular,Consolas,Menlo,monospace">
     <text x="72" y="152" font-size="72" font-weight="700" fill="#f8fafc">t3-auto-build</text>
     <text x="72" y="282" font-size="20" fill="#94a3b8"><tspan fill="#38bdf8">codex</tspan> / <tspan fill="#a78bfa">antigravity</tspan> / <tspan fill="#fbbf24">claude</tspan></text>
   </g>
   <g font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif" font-size="28" fill="#cbd5e1">
-    <text x="74" y="204">Multi-model builds in parallel waves,</text>
+    <text x="74" y="204">Subscription-aware multi-model routing,</text>
     <text x="74" y="240">with safety guards built in.</text>
   </g>
   <!-- provider feeds -->

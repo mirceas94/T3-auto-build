@@ -2,8 +2,9 @@
 import path from 'node:path';
 import { isLocked, readCooldowns } from './_quota.mjs';
 import {
-  COOLDOWN_FILE, configDirOf, effectiveAllowlist, isBanned, loadConfig, modelKeys, normalizeModel, prop, readPayload, str,
-  warn,
+  AVAILABILITY_FILE, COOLDOWN_FILE, canonicalProvider, configDirOf, effectiveAllowlist, fastModeRequested, isBanned,
+  loadConfig, matchRetired, modelKeys, normalizeModel, payloadProblem, prop, readAvailability, readPayload, resolveTarget,
+  restrictedBy, str, warn,
 } from './_shared.mjs';
 
 // (?=\n?$) mirrors .NET's "$", which also matches before a trailing newline.
@@ -63,12 +64,10 @@ function cooldownBlock(configDir, models, providers, config) {
   try {
     const data = readCooldowns(path.join(configDir, COOLDOWN_FILE));
     for (const model of models.length ? models : [undefined]) {
-      for (const provider of providers.length ? providers : [undefined]) {
-        const lock = isLocked(data, { provider, model, config });
-        if (lock) {
-          return `Blocked by cooldown hook: '${lock.key}' is on active cooldown until ${lock.until} `
-            + `(scope: ${lock.scope}; window: ${lock.window}; reason: ${lock.reason}).`;
-        }
+      const lock = isLocked(data, { providers, model, config });
+      if (lock) {
+        return `Blocked by cooldown hook: '${lock.key}' is on active cooldown until ${lock.until} `
+          + `(scope: ${lock.scope}; window: ${lock.window}; reason: ${lock.reason}).`;
       }
     }
   } catch (error) {
@@ -77,7 +76,45 @@ function cooldownBlock(configDir, models, providers, config) {
   return null;
 }
 
+/** "provider:model" restricts that hosting only; a bare model restricts every hosting. */
+function planRestricted(refs, provider, keys, config) {
+  return refs.some((ref) => {
+    const [, host, name] = ref.match(/^([^:]+):(.+)$/) ?? [];
+    const hosting = canonicalProvider(host);
+    if (hosting && hosting !== provider) return false;
+    return [...modelKeys(hosting ? name : ref, config)].some((key) => keys.includes(key));
+  });
+}
+
+/** Why one requested model is refused, or null. The order of the checks decides which reason is reported. */
+function modelBlock(model, { providers, config, availability, allowed, known }) {
+  const target = resolveTarget({ providers, model }, config);
+  if (target.conflict) return `Blocked by allowlist hook: ${target.conflict}.`;
+  const keys = [...modelKeys(model, config)];
+  if ([model, ...keys].some((name) => matchRetired(name, config.retiredModels))) {
+    return `Blocked by allowlist hook: model '${model}' is banned (retired).`;
+  }
+  if ([model, normalizeModel(model)].some((name) => isBanned(name, config.bannedModels))) {
+    return `Blocked by allowlist hook: model '${model}' is banned.`;
+  }
+  if (planRestricted(config.planRestrictedModels, target.provider, keys, config)) {
+    return `Blocked by plan hook: model '${model}' is plan-restricted on the configured subscription.`;
+  }
+  const restriction = keys.map((key) => restrictedBy(availability, target.provider, key)).find(Boolean);
+  if (restriction) {
+    const until = Date.parse(restriction.until);
+    return `Blocked by availability hook: model '${model}' is ${restriction.status} on ${target.provider}`
+      + `${Number.isNaN(until) ? '' : ` until ${new Date(until).toISOString()}`}.`;
+  }
+  if (!keys.some((key) => known.has(key))) {
+    return `Blocked by allowlist hook: model '${model}' is outside the ${allowed.length}-model allowlist.`;
+  }
+  return null;
+}
+
 function blockReason(payload) {
+  const problem = payloadProblem(payload);
+  if (problem) return `Blocked by safety hook: ${problem}.`;
   const tool = str(prop(payload, 'tool_name'));
   const input = prop(payload, 'tool_input');
 
@@ -102,19 +139,19 @@ function blockReason(payload) {
     const field = (name) => refs.map((ref) => str(prop(ref, name))).filter(Boolean);
     const models = field('model');
     const providers = ['provider', 'providerInstanceId', 'driverKind'].flatMap(field);
-    if (!models.length && !providers.length) return null;
     const configDir = configDirOf(import.meta.url);
     const config = loadConfig(configDir);
+    if (!config.allowFastModes && fastModeRequested(input)) {
+      return 'Blocked by fast-mode hook: fast/priority service modes are disabled (config "allowFastModes").';
+    }
+    if (!models.length && !providers.length) return null;
     if (models.length) {
       const allowed = effectiveAllowlist(config).flatMap(([, names]) => names);
       const known = new Set(allowed.flatMap((name) => [...modelKeys(name)]));
+      const { data: availability } = readAvailability(path.join(configDir, AVAILABILITY_FILE));
       for (const model of models) {
-        if ([model, normalizeModel(model)].some((name) => isBanned(name, config.bannedModels))) {
-          return `Blocked by allowlist hook: model '${model}' is banned.`;
-        }
-        if (![...modelKeys(model, config)].some((key) => known.has(key))) {
-          return `Blocked by allowlist hook: model '${model}' is outside the ${allowed.length}-model allowlist.`;
-        }
+        const reason = modelBlock(model, { providers, config, availability, allowed, known });
+        if (reason) return reason;
       }
     }
     return cooldownBlock(configDir, models, providers, config);

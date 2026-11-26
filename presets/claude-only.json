@@ -7,20 +7,50 @@
       "Claude Opus 5.5"
     ]
   },
-  "bannedModels": ["Argon", "Fable/Mythos"],
+  "bannedModels": [],
   "defaultModel": "Claude Sonnet 5.5",
   "defaultEffort": "medium",
   "compactionThreshold": 35,
   "ladders": {
-    "tier1": ["Claude Haiku 5.5", "Claude Sonnet 5.5"],
-    "commandRunner": ["Claude Sonnet 5.5", "Claude Haiku 5.5"],
-    "builderA": ["Claude Sonnet 5.5", "Claude Opus 5.5@medium"],
-    "testerA": ["Claude Sonnet 5.5", "Claude Opus 5.5@medium"],
-    "auditorA": ["Claude Opus 5.5", "Claude Sonnet 5.5@high"],
-    "builderB": ["Claude Sonnet 5.5", "Claude Opus 5.5@medium"],
-    "testerB": ["Claude Sonnet 5.5", "Claude Opus 5.5@medium"],
-    "auditorB": ["Claude Opus 5.5", "Claude Sonnet 5.5@high"],
-    "architect": ["Claude Opus 5.5@high", "Claude Sonnet 5.5@high"],
-    "dualAudit": ["Claude Opus 5.5@high", "Claude Sonnet 5.5@high"]
+    "tier1": [
+      "Claude Haiku 5.5",
+      "Claude Sonnet 5.5"
+    ],
+    "commandRunner": [
+      "Claude Sonnet 5.5",
+      "Claude Haiku 5.5"
+    ],
+    "builderA": [
+      "Claude Sonnet 5.5",
+      "Claude Opus 5.5@medium"
+    ],
+    "testerA": [
+      "Claude Sonnet 5.5",
+      "Claude Opus 5.5@medium"
+    ],
+    "auditorA": [
+      "Claude Opus 5.5",
+      "Claude Sonnet 5.5@high"
+    ],
+    "builderB": [
+      "Claude Sonnet 5.5",
+      "Claude Opus 5.5@medium"
+    ],
+    "testerB": [
+      "Claude Sonnet 5.5",
+      "Claude Opus 5.5@medium"
+    ],
+    "auditorB": [
+      "Claude Opus 5.5",
+      "Claude Sonnet 5.5@high"
+    ],
+    "architect": [
+      "Claude Opus 5.5@high",
+      "Claude Sonnet 5.5@high"
+    ],
+    "dualAudit": [
+      "Claude Opus 5.5@high",
+      "Claude Sonnet 5.5@high"
+    ]
   }
 }

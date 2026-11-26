@@ -5,6 +5,8 @@ import { classify, probeModels, syncModels } from '../lib/probe.mjs';
 import { sandbox, tree, write, json } from './helpers.mjs';
 import { doctor } from '../lib/doctor.mjs';
 import { fileHash, readManifest } from '../lib/manifest.mjs';
+import { resolveTiers, toConfig } from '../lib/plans.mjs';
+import { isLocked } from '../hooks/_quota.mjs';
 
 const success = { status: 0, stdout: 'ok', stderr: '' };
 const fail = (stderr, status = 1) => ({ status, stdout: '', stderr });
@@ -101,6 +103,32 @@ test('syncModels preserves custom config, records only plan restrictions, rerend
   }
 });
 
+test('syncModels on a v2 config probes only the tier allowlist and never lifts tier restrictions', async (t) => {
+  const box = sandbox(t);
+  assert.equal(box.cli('init', '--yes', '--claude-tier', 'pro', '--codex-tier', 'plus').status, 0);
+  const configFile = box.path('auto-build.config.json');
+  const before = json(configFile);
+  assert.equal(before.schemaVersion, 2);
+  before.planRestrictedModels = ['codex:gpt-6.1-sol'];
+  write(configFile, before);
+  const probed = [];
+  await syncModels(box.target, {
+    providers: ['claude', 'codex'], now: Date.UTC(2026, 0, 1), yes: true,
+    runner: async (cmd, args) => {
+      probed.push(args.join(' '));
+      return args.join(' ').includes('gpt-6.1-terra') ? fail('This model is not available on your current plan') : success;
+    },
+  });
+  const saved = json(configFile);
+  assert.ok(!probed.some((line) => /gpt-6\.1-sol|gpt-6-astra|fable/i.test(line)), probed.join('\n'));
+  const listed = Object.values(saved.allowlist).flat().map((m) => m.toLowerCase());
+  assert.ok(!listed.some((m) => /sol|astra|fable|gemini/.test(m)), listed.join(', '));
+  assert.ok(!listed.includes('gpt-6.1-terra'));
+  assert.ok(saved.planRestrictedModels.includes('codex:gpt-6.1-sol'));
+  assert.ok(saved.planRestrictedModels.includes('codex:gpt-6.1-terra'));
+  assert.equal(saved.planRestricted, undefined);
+});
+
 test('syncModels dry run probes but writes nothing', async (t) => {
   const box = sandbox(t);
   assert.equal(box.cli('init', '--yes').status, 0);
@@ -128,4 +156,46 @@ test('syncModels refuses an empty effective allowlist without writing', async (t
     yes: true, providers: ['claude'], runner: async () => success,
   }), /no allowed model would remain/);
   assert.deepEqual(tree(box.target), before);
+});
+
+const v2 = () => ({
+  ...toConfig(resolveTiers({ claude: 'ultra', codex: 'pro-200', antigravity: 'pro' })),
+  allowlist: { codex: ['gpt-6-luna', 'gpt-6-astra'], Antigravity: ['claude-opus-5-5'] },
+});
+
+test('probeModels reports scarce and unselected pools as skipped without running them', async () => {
+  const ran = [];
+  const runner = async (cmd, args) => { ran.push(args[args.indexOf('--model') + 1]); return success; };
+  const { results } = await probeModels({ config: v2(), runner });
+  assert.deepEqual(ran, ['gpt-6-luna']);
+  assert.deepEqual(results.filter((r) => r.skipped).map((r) => r.model), ['gpt-6-astra', 'claude-opus-5-5']);
+
+  ran.length = 0;
+  await probeModels({ config: v2(), runner, probeScarce: true });
+  assert.deepEqual(ran, ['gpt-6-luna', 'gpt-6-astra']);
+
+  ran.length = 0;
+  await probeModels({ config: v2(), runner, probeScarce: true, pools: ['astra'] });
+  assert.deepEqual(ran, ['gpt-6-astra']);
+});
+
+test('probe cooldown keys use v2 pools and lock exactly the refused hosting', async () => {
+  const now = Date.UTC(2026, 0, 1);
+  const config = v2();
+  const lockFor = async (provider, model, message) => (await probeModels({
+    config, candidates: { [provider]: [model] }, probeScarce: true, runner: async () => fail(message), now,
+  })).results[0].cooldown;
+
+  const weekly = await lockFor('codex', 'gpt-6-astra', 'weekly limit reached');
+  assert.equal(weekly.key, 'tier:codex:astra');
+  assert.equal(weekly.entry.tier, 'astra');
+  const locks = { [weekly.key]: weekly.entry };
+  assert.ok(isLocked(locks, { provider: 'codex', model: 'gpt-6-astra', config }, now));
+  assert.equal(isLocked(locks, { provider: 'codex', model: 'gpt-6-luna', config }, now), null);
+
+  const burst = await lockFor('claude', 'claude-sonnet-5-5', '429 rate limit');
+  assert.equal(burst.key, 'model:claude:claude-sonnet-5-5');
+  const hosted = { [burst.key]: burst.entry };
+  assert.ok(isLocked(hosted, { provider: 'claude', model: 'claude-sonnet-5-5', config }, now));
+  assert.equal(isLocked(hosted, { provider: 'antigravity', model: 'claude-sonnet-5-5', config }, now), null);
 });
