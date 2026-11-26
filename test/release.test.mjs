@@ -118,4 +118,7 @@ test('CI, Dependabot, issue template, and README release links are valid', () =>
   assert.notEqual(readme.charCodeAt(0), 0xfeff, 'README must not start with a BOM');
   assert.match(readme, /<img[^>]*src="https:\/\/raw\.githubusercontent\.com\/[^"#]*assets\/banner\.svg"[^>]*alt="[^"]+"[^>]*width="100%"/i);
   assert.doesNotMatch(readme, /<img[^>]*assets\/banner\.svg[^>]*height=/i);
+  for (const topic of [/### Starting model/, /orchestrator\/coordinator/, /pre-tool-use\.mjs/, /Follow-Up Refinement Rule/]) {
+    assert.match(readme, topic);
+  }
 });
