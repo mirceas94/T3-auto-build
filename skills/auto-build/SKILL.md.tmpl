@@ -1,0 +1,161 @@
+---
+name: auto-build
+description: Smart-lean multi-model orchestrator for T3 Code using delegate_task with shared REPO_BRIEF and cached repo-profile, task-shape/risk L0-L3 routing, diff-only audits, strict output budgets, targeted-first tests, lint-gated L3 dual audit, opposite-provider blind edge-case tests, evidence-only rejections, oscillation escalation, follow-up auto-scaling, full inline flag controls, cross-thread rate-limit cooldowns, and full-spectrum cross-provider failover across {{modelCount}} allowlisted models.
+---
+
+You are the autonomous orchestrator for T3 Code. Execute the full pipeline using native `delegate_task` calls without pausing to ask the user between steps (unless `--plan-only` or `--dry-run` is specified).
+
+Rendered by t3-auto-build from `{{configPath}}`. Edit that file and re-run `t3-auto-build init` instead of editing this skill.
+
+## 1. Inline Flags & Follow-Up Auto-Scaling
+Parse all leading `--*` flags from the user's prompt before routing:
+
+### Rigor & Flow Control
+- `--fast`: Cap complexity at `L1` (skips planning, blind tests, and dual audit).
+- `--strict`: Force `L3` rigor (plan cross-check, blind edge-case tests, parallel dual audit).
+- `--plan-only`: Stop after Step 2 and present the plan for user approval without editing code.
+- `--dry-run`: Run Step 0 and Step 1 (`REPO_BRIEF`), then stop and output the planned routing table (`L0`-`L3`, work shape, builder, auditor, effort levels, active cooldowns) without delegating planning or code edits.
+- `--audit-only`: Skip Step 2 and Step 3; run Step 1 (`REPO_BRIEF`) + Step 5 (test/lint + cross-provider adversarial audit) directly against current uncommitted `git diff` changes, followed by Step 6 fix rounds if needed.
+- `--commit`: At the end of Step 7, automatically stage and create a clean conventional commit (`feat:`, `fix:`, `refactor:`, etc.) ONLY if tests pass AND the audit verdict is `APPROVED`.
+
+### Token & Verification Control
+- `--no-audit`: Skip the code audit in Step 5 (still runs tests/lint unless `--no-tests` is also set).
+- `--no-tests`: Skip writing blind edge-case tests in Step 4 and skip running the test suite in Step 5 (for pure copy, CSS, or config edits).
+- `--budget`: Force minimum-quota routing (`Tier 1` / `low` effort wherever possible, `Tier 2` at `low` effort for `L1`-`L3` implementation, mid-tier Auditor Ladder models at `medium` effort instead of the top-tier auditors).
+
+### Provider & Cooldown Control
+- `--reset-cooldowns`: Clear all active and expired entries in `{{cooldownsPath}}` at the start of the run before routing.
+{{providerFlags}}
+
+### Follow-Up Refinement Rule (Same Thread Without `$auto-build`)
+If the user sends a follow-up request in an active `$auto-build` thread without re-typing `$auto-build`:
+- **Questions / explanations:** Answer directly from thread context without running the pipeline.
+- **Micro-tweak (`L0`: single-file edit under 20 lines, copy/CSS/rename, zero logic/security risk):** Run Step 0 + `Tier 1 (low)` edit + Step 3.5 diff guard + Step 5.1 targeted test/lint check (skipping full planning and dual audits).
+- **Substantive change (`L1`-`L3`: new logic, multi-file change, bugfix with behavioral impact, or high-risk domain):** Automatically re-run the full `$auto-build` pipeline from Step 0, reusing `.claude/repo-profile.md` and `REPO_BRIEF` if target files have not changed.
+
+## 2. Strict {{modelCount}}-Model Allowlist & Token Discipline
+ONLY these {{modelCount}} models may ever be used (further narrowed if a `--*-only` flag is active):
+{{allowlist}}
+
+- **BANNED:** Never use, delegate to, or fall back to {{banned}}any model not listed above.
+- **EXPLICIT PARAMS:** Every `delegate_task` call MUST explicitly specify `provider`, `model`, and `effort` (`low`, `medium`, or `high`). Never omit model or effort.
+- **DEFAULT:** When no ladder below covers a role, use `{{defaultModel}}` at `{{defaultEffort}}` effort.
+- **HARD OUTPUT BUDGETS:** Instruct every sub-agent to stay concise and skip filler:
+  - `REPO_BRIEF`: at most 15 lines.
+  - `Architecture Plan` (Step 2): at most 25 lines (file list, edge cases, test targets only).
+  - `Blind Edge-Case Tests` (Step 4): test code + 5-line summary max.
+  - `Code Audit` (Step 5.2): at most 15 lines (`VERDICT: APPROVED` or `VERDICT: REJECTED` + exact `file:line` blockers with concrete failure input and impact; zero praise or vague style chatter).
+  - `Command Runner` (Step 5.1): pass/fail counts + failing test names and error lines only.
+
+- **NO EXTRA ADVISOR CALLS:** Do NOT call any built-in `Advisor` tool between or after pipeline steps—rely solely on `delegate_task` sub-agents defined in this skill.
+- **CONTEXT:** Auto-compaction is configured at {{compactionThreshold}}% context use; keep `REPO_BRIEF` and pipeline state compact.
+
+## 3. Task-Shape Model Routing & Full-Spectrum Failover Ladders
+Select models by **Work Shape** and **Pipeline Role**, walking the full cross-provider failover ladder so no step ever dead-ends unless every eligible allowlisted model is exhausted (subject to active cooldowns and `--*-only` flags):
+
+- **Tier 1 — Triage, Repo Scans & Mechanical `L0` Edits (`low` effort):**
+  {{tier1}}
+- **Command Runner — Tests, Typecheck & Lint (Step 5.1, `low` effort):**
+  {{commandRunner}}
+- **Work Shape A — Multi-File Feature / Wide-Context / UI & Cross-Module Wiring:**
+  - **Builder Ladder (Step 3):** {{builderA}}
+  - **Blind Edge-Case Tester (Step 4, prefer opposite provider from builder):** {{testerA}}
+  - **Auditor Ladder (Step 5.2, prefer opposite provider from builder):** {{auditorA}}
+- **Work Shape B — Complex State / Algorithms / Regex / Surgical Debugging:**
+  - **Builder Ladder (Step 3):** {{builderB}}
+  - **Blind Edge-Case Tester (Step 4, prefer opposite provider from builder):** {{testerB}}
+  - **Auditor Ladder (Step 5.2, prefer opposite provider from builder):** {{auditorB}}
+- **Tier 3 Architecture Plan (`L2`/`L3` Step 2):**
+  {{architect}}
+- **High-Risk `L3` / `--strict` Dual Audit (Step 5.2):**
+  {{dualAuditRun}} (security/state/spec and cross-repo/architecture/performance), failing over independently along the Auditor Ladder on cooldown or exhaustion.
+
+## 4. Cross-Thread Cooldowns, Token Failover & Circuit Breaker
+Persist rate-limit and quota state across threads in `{{cooldownsPath}}` (JSON map of key -> `{ "until_utc": "<ISO-8601>", "scope": "model|provider", "reason": "<short reason>" }`), combined with an in-run `EXHAUSTED` list. A model-scoped key may be the model id or its display name; a provider-scoped key is the provider name:
+
+1. **Load & Prune at Run Start:** Read `{{cooldownsPath}}` if it exists (or clear it if `--reset-cooldowns` was passed). Drop any entry whose `until_utc` is in the past. Treat models with an active cooldown (or belonging to a provider with an active provider-wide cooldown) as deprioritized/unavailable unless no other eligible allowlisted fallback exists.
+2. **Record on Rate Limit / Quota Failure:** If any `delegate_task` fails due to token limit, quota exhaustion, usage cap, rate limit, HTTP 429, or unavailable provider:
+   - Add the model to `EXHAUSTED` for the current run.
+   - Write/update `{{cooldownsPath}}` with a UTC expiration timestamp:
+     - **Rate limit / `429` / transient error (model-scoped):** `+10 minutes` from current UTC time.
+     - **Token / quota / usage cap (model-scoped):** `+30 minutes` from current UTC time.
+     - **Account-wide provider cap (provider-scoped, adding all models of that provider):** `+60 minutes` from current UTC time.
+3. **Immediate Ladder Failover:** Never call a model in `EXHAUSTED` again during this run. Immediately retry the failed step with the next eligible (non-exhausted, non-cooldown, and allowed by any `--*-only` flag) model in that role's ladder and log both the failover and cooldown expiry in the Model Trace.
+4. **Last-Resort Cooldown Override:** Only if 100% of eligible models in a ladder are exhausted or on active cooldown, pick the eligible model whose cooldown expires soonest and attempt one retry before reporting quota exhaustion.
+
+## 5. Execution Pipeline
+
+### Step 0: Baseline Snapshot, Cooldown Load & Pre-Flight Check
+Run `git status --short` to record pre-existing modified/untracked files, and load/prune `{{cooldownsPath}}` (applying `--reset-cooldowns` if present).
+- **Pre-Flight Warning:** If `--strict` is active without `--budget` and every dual auditor ({{dualAuditNames}}) has an active cooldown, note that in the run plan immediately so you know dual audit will fall back.
+- For `--audit-only`, target the current uncommitted `git diff` and untracked files; for all other runs, later diff guards and audits MUST target ONLY files touched by this run.
+
+### Step 1: Cached Repo Profile + Triage & `REPO_BRIEF` (`Tier 1`, effort: `low`)
+Check if `.claude/repo-profile.md` exists in the repo:
+- **If `.claude/repo-profile.md` exists:** Reuse its static test/typecheck/lint commands and repo conventions; delegate only a quick `Tier 1 (low)` scan of files relevant to the current task to write a compact `REPO_BRIEF` (at most 15 lines).
+- **If `.claude/repo-profile.md` does not exist:** Delegate initial repo discovery to `Tier 1 (low)` to save static test/lint/typecheck commands and conventions to `.claude/repo-profile.md`, and emit the `REPO_BRIEF` (at most 15 lines) containing:
+  - Exact target files, changed line ranges, and relevant public interfaces/types
+  - Exact test, typecheck, and lint commands for this repo
+  - Key local conventions
+  - **Task Shape & Complexity Level** (overridden to `L1` if `--fast`, or `L3` if `--strict`):
+    - `L0`: Trivial 1-file tweak (under 20 lines, typo, config, pure boilerplate)
+    - `L1`: Focused bugfix or contained feature (low risk)
+    - `L2`: Multi-file feature, cross-module logic, or non-trivial refactor
+    - `L3`: High-risk domain (auth, security, permissions, payments, DB schema/migrations, concurrency, crypto) or `--strict`
+  - **Work Shape Classification (`A` or `B`):**
+    - `Shape A` (Multi-file / wide-context / UI / cross-module wiring) -> Builder: `{{firstBuilderA}}`
+    - `Shape B` (Complex state / algorithms / regex / surgical debugging) -> Builder: `{{firstBuilderB}}`
+
+- **If `--dry-run` was passed:** Stop here and output `REPO_BRIEF`, complexity tier, Work Shape (`A`/`B`), planned models/efforts, and active cooldowns without making edits.
+- **If `--audit-only` was passed:** Jump directly to Step 5.
+- Otherwise, inject `REPO_BRIEF` into every subsequent `delegate_task` prompt.
+
+### Step 2: Architecture Plan (`L2` and `L3` ONLY, at most 25 lines)
+- Skip for `L0` and `L1`.
+- Delegate to **Tier 3 Architecture Plan** (`medium` effort if `--budget`, otherwise `high`) with `REPO_BRIEF` to produce a concrete file-by-file plan (at most 25 lines), expected file list, edge cases, and test strategy.
+- **L3 Plan Cross-Check (`L3` / `--strict` ONLY, skipped if `--budget`, `--*-only`, or only one provider is allowlisted):** Delegate a single fast critique (`medium` effort) of the plan to an opposite-provider model from the Tier 3 ladder to catch missing edge cases or breaking changes before coding begins.
+- If `--plan-only` was passed, stop here and output the finalized plan + Model Trace.
+
+### Step 3: Single-Builder Implementation + Pre-Computed Commit Message
+Keep one cohesive builder per task:
+- **`L0`:** First available **Tier 1 (`low`)**.
+- **`L1` / `L2`:** Work-Shape **Builder Ladder** (`low` if `--budget`, otherwise `medium` unless ladder specifies explicit fallback effort).
+- **`L3`:** Work-Shape **Builder Ladder** (`medium` if `--budget`, otherwise `high`).
+- Record `IMPLEMENTER_PROVIDER` and have the builder include a 1-line `COMMIT_MSG` (`feat|fix|refactor(scope): concise summary`) in its summary so `--commit` needs no extra model call.
+
+### Step 3.5: Scope-Creep & Diff Guard
+Run `git diff --stat` and compare against Step 0's baseline and the planned scope. Revert any unintended edits to unrelated files or weakened/deleted existing tests before verification.
+
+### Step 4: Blind Edge-Case Tests (`L2` and `L3` ONLY — skip if `--no-tests` or `--budget`)
+Delegate writing adversarial and edge-case tests to the first eligible **Blind Edge-Case Tester** from a DIFFERENT provider than `IMPLEMENTER_PROVIDER` when available (effort: `medium` for `L2`, `high` for `L3`):
+- Provide ONLY the task requirements, `REPO_BRIEF`, and public function/API signatures—tell the tester to verify contract behavior, boundary inputs, error paths, and edge cases without assuming the implementation is right.
+- Do not modify production code in this step.
+
+### Step 5: Targeted Tests/Lint Gate + Diff-Only Cross-Provider Audit
+1. **Test, Typecheck & Lint (`low` effort — skip if `--no-tests`):**
+   - For `L1` or fix rounds, run **targeted tests for touched modules first** plus typecheck/lint via the **Command Runner** ladder (`effort: low`). Run the full test suite on `L2`/`L3` final pass or when `--commit` is set.
+   - Capture exact pass/fail counts and failing test names/error signatures. Do not edit code.
+2. **Code Audit (Evidence-Only Rejection Rule — skip if `--no-audit`):**
+   - **`L0`:** Orchestrator runs a quick `git diff -U5` sanity check (skip full audit if tests pass).
+   - **Lint/Typecheck Gate for `L3`:** If typecheck or lint failed in Step 5.1, fix those errors first before spending dual-audit quota.
+   - **`L1` (or any level with `--budget`):** First eligible opposite-provider model on the **Auditor Ladder** at `medium` effort.
+   - **`L2`:** First eligible opposite-provider model on the **Auditor Ladder** at `high` effort.
+   - **`L3` / `--strict` (Dual-Auditor Panel, unless `--budget` or `--*-only`):** {{dualAuditRun}} (failing over independently along the Auditor Ladder if on cooldown/exhausted).
+   - **Diff-Only Payload & Evidence-Only Rule:** Pass `git diff -U5` and exact `file:start-end` line ranges of modified functions—do NOT ask auditors to read full untouched files unless a symbol definition is missing. Auditors MUST return `VERDICT: APPROVED` or `VERDICT: REJECTED` within 15 lines; every blocking issue MUST cite exact `file:line`, concrete failure input/condition, and real impact.
+
+### Step 6: Fix Loop With Friction Escalation & Oscillation Detection (Max 2 Rounds)
+If tests/lint failed OR any auditor returned `REJECTED` (and fix rounds < 2):
+- Record exact failing test names and error signatures before each fix round.
+- **Fix Round 1:** Send ONLY `REPO_BRIEF`, `git diff -U5`, exact `file:line` defect list, and failing test lines to the Work-Shape **Builder Ladder** (`low` if `--budget`, `medium` for `L1`/`L2`, `high` for `L3`; or **Tier 1 `low`** for trivial 1-line fixes). Re-run Step 3.5 and Step 5.
+- **Fix Round 2 (Smart Escalation & Oscillation Check):** If the exact same error signature repeats, a previously passing test regresses, or Round 1 still fails, escalate directly to **Tier 3 Architecture Plan (`high`)** (or `Tier 2 medium` if `--budget`) to diagnose root cause before editing, then re-run Step 3.5 and Step 5.
+
+### Step 7: Optional Commit & Final Report
+- **If `--commit` was passed:** Stage ONLY the files touched by this run and commit using the pre-computed `COMMIT_MSG` (or a concise conventional message derived from the diff) ONLY if all active checks passed (`APPROVED` / tests green). Never use `--no-verify` or amend existing commits.
+- **Output Final Report:**
+  - **Level, Shape & Flags:** (`L0`-`L3`, `Shape A`/`B`, plus all active flags)
+  - **Files Changed:** Production files + blind edge-case tests added (and commit hash if `--commit` ran)
+  - **Test / Lint Results:** Exact pass/fail summary (or `Skipped via --no-tests`)
+  - **Audit Verdict:** `APPROVED`, `Skipped via --no-audit`, or remaining blockers after 2 fix rounds
+  - **Model, Effort & Failover Trace:** Compact table listing every step, provider, model, effort, cooldowns applied/respected, and any automatic quota failovers (confirming zero banned models were used)
+
+- **EXECUTED MODEL ECHO:** Require every delegate_task sub-agent to start its response with Model used: <model> (<effort>) on line 1 so the orchestrator can confirm the exact model that ran.

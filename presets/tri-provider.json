@@ -1,0 +1,36 @@
+{
+  "preset": "tri-provider",
+  "allowlist": {
+    "Codex": [
+      "gpt-5.6-luna",
+      "gpt-5.6-terra",
+      "gpt-6-luna"
+    ],
+    "Antigravity": [
+      "Gemini 4 Hydrogen",
+      "Gemini 4 Neon",
+      "Gemini 4 Carbon"
+    ],
+    "Claude": [
+      "Claude Haiku 5.5",
+      "Claude Sonnet 5.5",
+      "Claude Opus 5.5"
+    ]
+  },
+  "bannedModels": ["Argon", "Fable/Mythos"],
+  "defaultModel": "Claude Sonnet 5.5",
+  "defaultEffort": "medium",
+  "compactionThreshold": 35,
+  "ladders": {
+    "tier1": ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-6-luna", "Gemini 4 Hydrogen", "Claude Haiku 5.5", "Gemini 4 Neon", "Claude Sonnet 5.5"],
+    "commandRunner": ["gpt-6-luna", "gpt-5.6-terra", "Claude Sonnet 5.5", "Gemini 4 Hydrogen", "gpt-5.6-luna", "Claude Haiku 5.5", "Gemini 4 Neon"],
+    "builderA": ["Gemini 4 Neon", "Claude Sonnet 5.5", "gpt-6-luna", "Gemini 4 Carbon@medium", "Claude Opus 5.5@medium", "gpt-5.6-terra@high", "gpt-5.6-luna@high"],
+    "testerA": ["Claude Sonnet 5.5", "gpt-6-luna", "Gemini 4 Neon", "Claude Opus 5.5@medium", "Gemini 4 Carbon@medium"],
+    "auditorA": ["Claude Opus 5.5", "Claude Sonnet 5.5@high", "Gemini 4 Carbon", "gpt-6-luna@high", "Gemini 4 Neon@high"],
+    "builderB": ["Claude Sonnet 5.5", "Gemini 4 Neon", "gpt-6-luna", "Claude Opus 5.5@medium", "Gemini 4 Carbon@medium", "gpt-5.6-terra@high", "gpt-5.6-luna@high"],
+    "testerB": ["Gemini 4 Neon", "gpt-6-luna", "Claude Sonnet 5.5", "Gemini 4 Carbon@medium", "Claude Opus 5.5@medium"],
+    "auditorB": ["Gemini 4 Carbon", "Gemini 4 Neon@high", "Claude Opus 5.5", "gpt-6-luna@high", "Claude Sonnet 5.5@high"],
+    "architect": ["Gemini 4 Carbon@high", "Claude Opus 5.5@high", "Gemini 4 Neon@high", "Claude Sonnet 5.5@high", "gpt-6-luna@high", "gpt-5.6-terra@high"],
+    "dualAudit": ["Claude Opus 5.5@high", "Gemini 4 Carbon@high"]
+  }
+}
