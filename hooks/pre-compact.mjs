@@ -1,6 +1,10 @@
 // PreCompact: print preservation rules plus a live git snapshot.
 import fs from 'node:fs';
-import { COOLDOWN_FILE, configDirOf, displayPath, effectiveAllowlist, loadConfig, prop, readPayload, run, warn, which } from './_shared.mjs';
+import path from 'node:path';
+import {
+  COOLDOWN_FILE, configDirOf, displayPath, effectiveAllowlist, isObject, loadConfig, prop, readJson, readPayload, run, warn,
+  which,
+} from './_shared.mjs';
 
 const joinNames = (names) =>
   names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
@@ -25,6 +29,26 @@ When summarizing this session, you MUST preserve verbatim:
 `;
 }
 
+const STATE_FIELDS = ['flags', 'completedWaves', 'modifiedFiles', 'remaining', 'blockers'];
+const FIELD_LIMIT = 800;
+
+/** The orchestrator's saved progress in the project, each field capped so the injected text stays small. */
+function orchestratorState(cwd) {
+  const file = path.join(cwd, '.claude', 'auto-build-state.json');
+  try {
+    const state = readJson(file);
+    if (!isObject(state)) throw new TypeError('not a JSON object');
+    const fields = STATE_FIELDS.filter((name) => state[name] !== undefined).map((name) => {
+      const value = JSON.stringify(state[name]);
+      return `- ${name}: ${value.length > FIELD_LIMIT ? `${value.slice(0, FIELD_LIMIT)}... (truncated; read the file)` : value}\n`;
+    });
+    return `\nORCHESTRATOR STATE FILE (preserve this path and these values verbatim): ${file}\n${fields.join('')}`;
+  } catch (error) {
+    if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') warn(`ignoring auto-build-state.json (${error.name})`);
+    return '';
+  }
+}
+
 function snapshot(cwd) {
   const git = which('git');
   if (!git) return '';
@@ -43,8 +67,9 @@ function snapshot(cwd) {
 
 try {
   const requested = prop(await readPayload(), 'cwd');
-  const cwd = typeof requested === 'string' && requested && fs.existsSync(requested) ? requested : process.cwd();
-  process.stdout.write(rules(configDirOf(import.meta.url)) + snapshot(cwd));
+  const known = typeof requested === 'string' && requested !== '' && fs.existsSync(requested);
+  const state = known ? orchestratorState(requested) : '';
+  process.stdout.write(rules(configDirOf(import.meta.url)) + state + snapshot(known ? requested : process.cwd()));
 } catch (error) {
   warn(`pre-compact failed (${error.message})`);
 }

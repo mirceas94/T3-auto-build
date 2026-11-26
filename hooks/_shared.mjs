@@ -39,6 +39,34 @@ export function displayPath(configDir, file) {
 /** Makes a model id and its display name comparable: "claude-sonnet-5-5" == "Claude Sonnet 5.5". */
 export const normalizeName = (name) => name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-');
 
+/** 'claude' | 'codex' | 'antigravity' from a model id or display name, else null. */
+export function inferProvider(model) {
+  if (typeof model !== 'string') return null;
+  const family = normalizeName(model).match(/^(claude|gpt|gemini)-[a-z0-9]/)?.[1];
+  return { claude: 'claude', gpt: 'codex', gemini: 'antigravity' }[family] ?? null;
+}
+
+/** Drops a trailing -YYYYMMDD release date. */
+export const normalizeModel = (id) => id.replace(/-\d{8}$/, '');
+
+/** The id a provider CLI takes: config.modelIds first, else the hyphenated name (codex ids keep "."). */
+export function cliModelId(provider, displayOrId, config) {
+  const ids = config?.modelIds;
+  if (isObject(ids) && Object.hasOwn(ids, displayOrId)) return ids[displayOrId];
+  const separator = provider?.toLowerCase() === 'codex' ? /[^a-z0-9.]+/g : /[^a-z0-9]+/g;
+  return displayOrId.toLowerCase().replace(separator, '-').replace(/^-+|-+$/g, '');
+}
+
+/** Comparable forms of a model: date-stripped and normalized, plus its config.modelIds counterpart. */
+export function modelKeys(model, config) {
+  const key = (name) => normalizeName(normalizeModel(name));
+  const keys = new Set([key(model)]);
+  for (const [name, id] of Object.entries(config?.modelIds ?? {})) {
+    if (typeof id === 'string' && (keys.has(key(name)) || keys.has(key(id)))) keys.add(key(name)).add(key(id));
+  }
+  return keys;
+}
+
 /** Banned entries match as substrings of the raw or normalized name; "A/B" bans both A and B. */
 export function isBanned(model, bannedModels) {
   const name = model.toLowerCase();
@@ -84,7 +112,13 @@ export function loadConfig(configDir) {
     warn(`invalid "${key}" in ${CONFIG_FILE}; using default`);
     return defaults[key];
   };
-  return { allowlist: pick('allowlist', isAllowlist), bannedModels: pick('bannedModels', isStringList) };
+  const config = { allowlist: pick('allowlist', isAllowlist), bannedModels: pick('bannedModels', isStringList) };
+  // Optional keys: present only when set to an object.
+  for (const key of ['tiers', 'modelIds']) {
+    const value = pick(key, isObject);
+    if (value !== undefined) config[key] = value;
+  }
+  return config;
 }
 
 /** Hook payload from stdin; null when absent or unparsable (hooks fail open). */
@@ -116,16 +150,6 @@ export function str(value) {
   if (Array.isArray(value)) return value.map(str).join(' ');
   if (typeof value === 'boolean') return value ? 'True' : 'False';
   return typeof value === 'object' ? JSON.stringify(value) : String(value);
-}
-
-/** Cooldown entries as [key, value, untilMs]. Throws on a bad entry after yielding the earlier ones. */
-export function* cooldownEntries(data) {
-  if (!isObject(data)) throw new TypeError('cooldown file is not a JSON object');
-  for (const [key, value] of Object.entries(data)) {
-    const until = typeof value?.until_utc === 'string' ? Date.parse(value.until_utc) : NaN;
-    if (Number.isNaN(until)) throw new TypeError('cooldown entry without a valid until_utc');
-    yield [key, value, until];
-  }
 }
 
 /** Resolve a command on PATH. Never searches the current directory (unlike a bare spawn on Windows). */

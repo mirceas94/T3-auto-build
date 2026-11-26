@@ -3,9 +3,10 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { before, describe, test } from 'node:test';
-import { loadConfig, run, which } from '../hooks/_shared.mjs';
+import { isLocked, parseRateLimit, summarize } from '../hooks/_quota.mjs';
+import { cliModelId, inferProvider, loadConfig, normalizeModel, run, which } from '../hooks/_shared.mjs';
 import { PRESETS, loadPreset } from '../lib/install.mjs';
-import { json, read, sandbox, write } from './helpers.mjs';
+import { ROOT, json, read, sandbox, write } from './helpers.mjs';
 
 const MINUTE = 60_000;
 const at = (minutes) => new Date(Date.now() + minutes * MINUTE).toISOString();
@@ -51,12 +52,109 @@ test('pre-tool-use blocks destructive commands', (t) => {
   const box = installed(t);
   const destructive = [
     'git push --force', 'git push -f', 'git push origin main --force', 'GIT PUSH --FORCE-with-lease',
-    'git reset --hard HEAD~1', 'cd x && git  reset  --hard', 'rm -rf .', 'rm -rf /', 'rm -rf ~', 'rm -rf ./build', 'rm -rf \\tmp',
+    'git reset --hard HEAD~1', 'cd x && git  reset  --hard', 'rm -rf .', 'rm -rf /', 'rm -rf ~', 'rm -rf \\tmp',
   ];
   for (const command of destructive) blocked(box, bash(command), /destructive command/);
   for (const command of ['git push origin main', 'git reset --soft HEAD~1', 'rm -rf build', 'rm file']) allowed(box, bash(command));
   // As in the original, "." never spans a newline.
   allowed(box, bash('git push origin main\necho --force'));
+});
+
+test('rm -rf guard inspects every argument', (t) => {
+  const box = installed(t);
+  const protectedTargets = [
+    'rm -rf ./', 'rm -rf ..', 'rm -rf ../', 'rm -rf ../sibling', 'rm -rf ./*', 'rm -rf .*', 'rm -rf .git', 'rm -rf .git/', 'rm -rf .git/objects', 'rm -rf .[!.]*',
+    'rm -rf build /', 'rm -rf build "~/x"', "rm -rf 'a;b' /etc", 'rm -rf build && rm -rf ./', 'rm -rf build \\\n /',
+    'bash -c "rm -rf ." && echo "done"', 'rm -rf 2>/dev/null .',
+  ];
+  for (const command of protectedTargets) blocked(box, bash(command), /destructive command/);
+  const fine = [
+    'rm -rf .tmp', 'rm -rf .sandbox-claude', 'rm -rf .sandbox-claude/.tmp', 'rm -rf ./build', 'rm -rf build',
+    'rm -rf t3-auto-build', 'rm -rf build 2>/dev/null && ls /', 'rm -rf build; cd ..', 'rm -rf "build" # not /',
+  ];
+  for (const command of fine) allowed(box, bash(command));
+});
+
+test('model helpers infer providers and ids without false positives', () => {
+  const cases = {
+    'claude-opus-5-5': 'claude', 'Claude Opus 5.5': 'claude', 'gpt-5.6-luna': 'codex', 'gemini-4-neon': 'antigravity',
+    'Gemini 4 Carbon': 'antigravity', claudex: null, 'my-gpt-6': null, geminids: null, claude: null,
+  };
+  for (const [model, provider] of Object.entries(cases)) assert.equal(inferProvider(model), provider, model);
+  assert.equal(normalizeModel('claude-opus-5-5-20260101'), 'claude-opus-5-5');
+  assert.equal(cliModelId('claude', 'Claude Opus 5.5'), 'claude-opus-5-5');
+  assert.equal(cliModelId('codex', 'gpt-5.6-luna'), 'gpt-5.6-luna');
+  assert.equal(cliModelId('antigravity', 'Gemini 4 Neon', { modelIds: { 'Gemini 4 Neon': 'neon-x' } }), 'neon-x');
+});
+
+test('parseRateLimit classifies weekly, 5h and burst limits', () => {
+  const now = Date.UTC(2026, 10, 26, 12); // a Thursday
+  const after = (minutes) => new Date(now + minutes * MINUTE).toISOString();
+  const check = (text, options, window, scope, until) =>
+    assert.deepEqual(parseRateLimit(text, { now, ...options }), { window, scope, until }, text);
+  check('Weekly limit reached, resets Monday', {}, 'weekly', 'provider', '2026-11-30T00:00:00.000Z');
+  check('weekly limit', { resetDay: 'friday' }, 'weekly', 'provider', '2026-11-27T00:00:00.000Z');
+  check('weekly limit, resets 2020-01-01T00:00:00Z', {}, 'weekly', 'provider', after(7 * 24 * 60));
+  check('usage limit, try again in 2h13m', {}, '5h', 'provider', after(133));
+  check('5-hour limit reached', { sharing: 'heavy-tier-only' }, '5h', 'tier', after(300));
+  const clock = new Date(now);
+  clock.setHours(15, 0, 0, 0);
+  if (clock.getTime() <= now) clock.setDate(clock.getDate() + 1);
+  check("You've hit your limit, resets 3pm", {}, '5h', 'provider', clock.toISOString());
+  check('429 rate limit', { retryAfter: '30' }, 'burst', 'model', after(0.5));
+  check('429, Retry-After: 120', {}, 'burst', 'model', after(2));
+  check('429, retry in 45s', {}, 'burst', 'model', after(0.75));
+  check('429 too many requests', { retryAfter: 'soon' }, 'burst', 'model', after(10));
+});
+
+test('tier locks cover only heavy models, and the summary stays within 3 lines', () => {
+  const lock = { scope: 'tier', window: '5h', until: at(10), reason: 'cap', source: 'auto' };
+  const data = { 'tier:claude:heavy': lock };
+  assert.equal(isLocked(data, { model: 'claude-opus-5-5-20260101' }).key, 'tier:claude:heavy');
+  assert.equal(isLocked(data, { model: 'claude-sonnet-5-5' }), null);
+  assert.equal(isLocked(data, { provider: 'claude' }), null);
+  const config = { tiers: { claude: { heavyModels: ['Claude Sonnet 5.5'] } } };
+  assert.ok(isLocked(data, { model: 'claude-sonnet-5-5', config }));
+  assert.equal(isLocked(data, { model: 'claude-opus-5-5', config }), null);
+  const many = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`model:m${i}`, { ...lock, scope: 'model' }]));
+  assert.equal(summarize({ ...data, ...many }).length, 3);
+  assert.deepEqual(summarize({}), []);
+});
+
+test('pre-tool-use applies new-format locks and date-stripped model ids', (t) => {
+  const box = installed(t);
+  allowed(box, nested({ model: 'claude-sonnet-5-5-20260101' }));
+  const until = at(10);
+  write(box.cooldowns, {
+    'tier:claude:heavy': { scope: 'tier', window: '5h', until, reason: 'cap', source: 'auto' },
+    'provider:codex': { scope: 'provider', window: 'weekly', until, reason: 'week', source: 'probe' },
+  });
+  blocked(box, nested({ model: 'claude-opus-5-5' }), new RegExp(`'tier:claude:heavy'.*${until}.*window: 5h; reason: cap`));
+  blocked(box, nested({ model: 'gpt-5.6-luna' }), /'provider:codex'.*window: weekly/);
+  allowed(box, nested({ model: 'claude-sonnet-5-5' }));
+});
+
+test('pre-compact preserves the orchestrator state file, bounded', (t) => {
+  const box = installed(t);
+  box.env.GIT_CEILING_DIRECTORIES = box.dir;
+  const file = path.join(box.dir, '.claude', 'auto-build-state.json');
+  const compact = () => box.hook('pre-compact', { cwd: box.dir });
+  assert.doesNotMatch(compact().stdout + compact().stderr, /auto-build-state/);
+  write(file, {
+    flags: ['--strict'], completedWaves: [1], modifiedFiles: Array(500).fill('src/a.mjs'), remaining: ['wave 2'], blockers: [],
+  });
+  const { stdout } = compact();
+  assert.ok(stdout.includes(file), stdout);
+  for (const line of ['- flags: ["--strict"]', '- completedWaves: [1]', '- remaining: ["wave 2"]', '- blockers: []']) {
+    assert.ok(stdout.includes(line), line);
+  }
+  assert.match(stdout, /- modifiedFiles: .*truncated/);
+  assert.ok(stdout.length < 6000);
+  write(file, '{ nope');
+  const bad = compact();
+  assert.equal(bad.status, 0);
+  assert.match(bad.stderr, /ignoring auto-build-state/);
+  assert.doesNotMatch(bad.stdout, /STATE FILE/);
 });
 
 test('pre-tool-use blocks banned and non-allowlisted models', (t) => {
@@ -140,7 +238,7 @@ test('pre-tool-use enforces model and provider cooldowns', (t) => {
   const before = read(box.cooldowns);
   blocked(box, delegate({ model: 'claude opus 5.5' }), /cooldown.*rate limit/);
   blocked(box, delegate({ model: 'gpt-6-luna', provider: 'codex' }), /'Codex' is on active cooldown/);
-  allowed(box, delegate({ model: 'gpt-6-luna' }));
+  blocked(box, delegate({ model: 'gpt-6-luna' }), /'Codex' is on active cooldown/); // provider inferred from the model
   allowed(box, delegate({ model: 'Gemini 4 Neon' }));
   blocked(box, delegate({ provider: 'Codex' }), /'Codex' is on active cooldown/);
   assert.equal(read(box.cooldowns), before);
@@ -185,15 +283,19 @@ test('session-start prunes expired entries and reports active ones', (t) => {
   write(box.cooldowns, `﻿${JSON.stringify({ A: live, B: { until_utc: at(-1), scope: 'model', reason: 'x' } })}`);
   const result = box.hook('session-start', {});
   assert.equal(result.status, 0);
-  assert.equal(result.stdout, 'ACTIVE AUTO-BUILD COOLDOWNS (skip these models/providers): A (10m left: rate limit)\n');
-  assert.deepEqual(json(box.cooldowns), { A: live });
+  assert.equal(result.stdout, 'ACTIVE AUTO-BUILD COOLDOWNS (orchestrator: skip these locked providers/models):\n'
+    + `Models: A until ${live.until_utc} (10m left: rate limit)\n`);
+  const kept = { scope: 'model', window: 'custom', until: live.until_utc, reason: 'rate limit', source: 'manual' };
+  assert.deepEqual(json(box.cooldowns), { A: kept });
 
-  for (const expired of [{ B: { until_utc: at(-1), scope: 'model', reason: 'x' } }, {}, '']) {
-    write(box.cooldowns, expired);
-    const pruned = box.hook('session-start', {});
-    assert.equal(pruned.status, 0);
-    assert.equal(pruned.stdout, '');
-    assert.ok(!fs.existsSync(box.cooldowns), 'expired-only file is removed');
+  write(box.cooldowns, { B: { until_utc: at(-1), scope: 'model', reason: 'x' } });
+  assert.equal(box.hook('session-start', {}).stdout, '');
+  assert.ok(!fs.existsSync(box.cooldowns), 'expired-only file is removed');
+  // Nothing to prune: the file is left byte for byte.
+  for (const untouched of ['{}', '', JSON.stringify({ A: live })]) {
+    write(box.cooldowns, untouched);
+    assert.equal(box.hook('session-start', {}).status, 0);
+    assert.equal(read(box.cooldowns), untouched);
   }
   for (const bad of ['{ nope', '[1]', '{"A": {"until_utc": "never"}}']) {
     write(box.cooldowns, bad);

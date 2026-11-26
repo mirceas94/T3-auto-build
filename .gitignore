@@ -1,6 +1,7 @@
 ﻿node_modules/
 .sandbox-claude/
 .claude/repo-profile.md
+.claude/auto-build-state.json
 auto-build-cooldowns.json
 *.bak
 .DS_Store
