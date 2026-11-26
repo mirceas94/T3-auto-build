@@ -38,7 +38,8 @@ If the user sends a follow-up request in an active `$auto-build` thread without 
 ONLY these {{modelCount}} models may ever be used (further narrowed if a `--*-only` flag is active):
 {{allowlist}}
 
-- **BANNED:** Never use, delegate to, or fall back to {{banned}}any model not listed above.
+- **BANNED:** Never use, delegate to, or fall back to {{banned}}any model not listed above. Retired models (`retiredModels` in `{{configPath}}` plus the built-in retired list) are always banned (hook-enforced).
+- **NO SPEED MODES:** Never pass speed or service-tier options (`fast`, `ultrafast`, `priority`) to `delegate_task` unless `allowFastModes` is `true` in `{{configPath}}`. This is unrelated to the `--fast` rigor flag.
 - **EXPLICIT PARAMS:** Every `delegate_task` call MUST explicitly specify `provider`, `model`, and `effort` (`low`, `medium`, or `high`). Never omit model or effort.
 - **DEFAULT:** When no ladder below covers a role, use `{{defaultModel}}` at `{{defaultEffort}}` effort.
 - **HARD OUTPUT BUDGETS:** Instruct every sub-agent to stay concise and skip filler:
@@ -52,6 +53,8 @@ ONLY these {{modelCount}} models may ever be used (further narrowed if a `--*-on
 
 ## 3. Task-Shape Model Routing & Full-Spectrum Failover Ladders
 Select models by **Work Shape** and **Pipeline Role**, walking the full cross-provider failover ladder so no step ever dead-ends unless every eligible allowlisted model is exhausted (subject to active lockouts and `--*-only` flags):
+
+**Native pools first:** use each provider's native standard pool before scarce overflow ({{scarceModels}}). A bare model id means its native provider; use a cross-hosted model (`antigravity:<model>`) only by passing explicit `provider: "antigravity"` with the unprefixed `<model>`.
 
 - **Tier 1 — Triage, Repo Scans & Mechanical `L0` Edits (`low` effort):**
   {{tier1}}
@@ -70,14 +73,14 @@ Select models by **Work Shape** and **Pipeline Role**, walking the full cross-pr
 
 ## 4. Cross-Thread Cooldowns, Quota Failover & Circuit Breaker
 Lockouts persist across threads in `{{cooldownsPath}}`, combined with an in-run `EXHAUSTED` list:
-- **Keys:** `model:<id>` | `provider:<p>` | `tier:<p>:heavy` (that provider's heavy models only). Model ids may be display names.
+- **Keys:** `model:<id>` (all hostings) | `model:<provider>:<id>` (that hosting only) | `provider:<p>` | `tier:<p>:<pool>` (scarce pools `fable`, `astra`, `third-party-claude`; legacy `tier:<p>:heavy` is still read). Model ids may be display names.
 - **Entry:** `{ "scope": "model|provider|tier", "window": "burst|5h|weekly|custom", "until": "<ISO-8601 UTC>", "reason": "<short reason>", "source": "<who recorded it>" }`. Legacy entries (bare model/provider key with `scope` and `until_utc`) are still read.
 - **Locked means unavailable:** An unexpired entry removes every model it covers from every ladder (a hook blocks locked models). Never retry or override a lock.
 
-1. **Permanent Plan Errors** (model not in the plan/subscription, not entitled, unknown or unsupported model): Add to `EXHAUSTED`, fail over immediately, record NO cooldown, and advise the user to run `t3-auto-build sync-models`.
-2. **Quota & Rate Limits:** Classify the error and record it with `t3-auto-build quota set <provider|model> --burst|--5h|--weekly`:
+1. **Permanent Plan Errors** (model not in the plan/subscription, not entitled, unknown or unsupported model): Add to `EXHAUSTED`, fail over immediately, record NO cooldown, run `t3-auto-build availability mark <provider:model> plan-restricted --ttl 24h`, and advise the user to run `t3-auto-build sync-models`.
+2. **Quota & Rate Limits:** Classify the error and record it with `t3-auto-build quota set <provider|model|provider:model> --burst|--5h|--weekly`:
    - `--burst` (HTTP 429, rate limit, transient or unavailable; about 10 min): the model.
-   - `--5h` (session or usage limit) or `--weekly` (weekly cap): the provider. If only its heavy models are capped, the lock is `tier:<p>:heavy`.
+   - `--5h` (session or usage limit) or `--weekly` (weekly cap): the provider. If only a scarce pool is capped, add `--pool <pool>` (lock `tier:<p>:<pool>`).
    - CLI not on PATH: write the entry into `{{cooldownsPath}}` yourself with `source: "orchestrator"` (reset time from the error, else +10 min / +5 h / +7 days).
 3. **Ladder Failover:** Add everything the lock covers to `EXHAUSTED`, skip those sibling models, and retry the failed step with the next eligible (unlocked, allowed by any `--*-only` flag) model in that role's ladder. Log the failover and lock expiry in the Model Trace.
 4. **Quota Exhaustion:** If no eligible model is left in a ladder, save state, stop, and report quota exhaustion with the earliest reset time (continue later with `--resume`).
@@ -85,7 +88,7 @@ Lockouts persist across threads in `{{cooldownsPath}}`, combined with an in-run 
 ## 5. Execution Pipeline
 
 ### Step 0: Lockout Check, Baseline Snapshot & Resume
-1. **Before any delegation:** Apply `--reset-cooldowns` if present, then run `t3-auto-build quota status` (and `t3-auto-build quota check` if available). CLI not on PATH: read `{{cooldownsPath}}` directly and ignore expired entries. Automatically skip every locked model and every provider at 0% remaining quota.
+1. **Before any delegation:** Apply `--reset-cooldowns` if present, then run `t3-auto-build check-models` (every run; TTL-cached and fast; never add `--probe-scarce` unless the user asked), `t3-auto-build quota status` (and `t3-auto-build quota check` if available). CLI not on PATH: read `{{availabilityPath}}` and `{{cooldownsPath}}` directly and ignore expired entries. Automatically skip every locked, `plan-restricted` or `unavailable` model and every provider at 0% remaining quota. Show the subscriptions in the run plan: {{subscriptionSummary}}.
 2. Run `git status --short` to record pre-existing modified/untracked files.
 3. **`--resume`:** Read `.claude/auto-build-state.json`, restore its `flags` (newly typed flags win), skip `completedWaves`, keep `modifiedFiles` in this run's diff scope, and continue with `remaining` and `blockers` (rebuild `REPO_BRIEF` first). If the file is missing or invalid, say so and stop.
 - **State File (runs that edit code, plus `--plan-only`):** After each wave/step, overwrite `.claude/auto-build-state.json` with compact JSON `{"flags":[],"completedWaves":[],"modifiedFiles":[],"remaining":[],"blockers":[]}` (`remaining` names each pending wave/step and its files). Ensure it is gitignored: if `git check-ignore -q` on it fails, append its path to the file printed by `git rev-parse --git-path info/exclude`.
@@ -123,7 +126,7 @@ Check if `.claude/repo-profile.md` exists in the repo:
 ### Step 3: Implementation (Wave-Based Parallel for `L2` / `L3`) + Pre-Computed Commit Message
 - **`L0`:** One builder, first available **Tier 1 (`low`)**.
 - **`L1`:** One builder from the Work-Shape **Builder Ladder** (`low` if `--budget`, otherwise `medium` unless ladder specifies explicit fallback effort).
-- **`L2` / `L3`:** Split the plan into file-disjoint waves: (1) foundations/hooks -> (2) core logic/CLI -> (3) tests/docs. Dispatch each wave's builders in parallel from the Work-Shape **Builder Ladder** (`L2`: effort as `L1`; `L3`: `medium` if `--budget`, otherwise `high`); no file has two owners in one wave. **Shift Left:** after each wave, run Step 3.5, its exit checks, and syntax/typecheck, and fix failures before starting the next wave (with `--no-tests`, skip test suites only).
+- **`L2` / `L3`:** Split the plan into file-disjoint waves: (1) foundations/hooks -> (2) core logic/CLI -> (3) tests/docs. Dispatch each wave's builders in parallel from the Work-Shape **Builder Ladder** (`L2`: effort as `L1`; `L3`: `medium` if `--budget`, otherwise `high`); no file has two owners in one wave. Run at most {{maxParallelBuilders}} builders in parallel; queue the rest. **Shift Left:** after each wave, run Step 3.5, its exit checks, and syntax/typecheck, and fix failures before starting the next wave (with `--no-tests`, skip test suites only).
 - Record `IMPLEMENTER_PROVIDER` (every provider that built) and have each builder include a 1-line `COMMIT_MSG` (`feat|fix|refactor(scope): concise summary`) in its summary so `--commit` needs no extra model call.
 
 ### Step 3.5: Scope-Creep & Diff Guard

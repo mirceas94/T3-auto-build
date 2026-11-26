@@ -1,7 +1,7 @@
 {
   "name": "t3-auto-build",
-  "version": "1.0.1",
-  "description": "Cross-platform installer and $auto-build orchestration suite for T3 Code.",
+  "version": "2.0.0",
+  "description": "Cross-platform installer and $auto-build orchestration suite for T3 Code: subscription-aware cross-provider routing with quota and availability tracking.",
   "keywords": [
     "claude-code",
     "t3-code",
@@ -10,7 +10,13 @@
     "hooks",
     "cli",
     "codex",
-    "gemini"
+    "gemini",
+    "antigravity",
+    "subscription",
+    "quota",
+    "availability",
+    "cross-provider",
+    "model-routing"
   ],
   "homepage": "https://github.com/mirceas94/t3-auto-build#readme",
   "bugs": {
@@ -30,13 +36,14 @@
     "core",
     "presets",
     "skills",
-    "hooks"
+    "hooks",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "test": "node --test"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=18.18.0"
   },
   "license": "MIT"
 }

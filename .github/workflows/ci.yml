@@ -54,7 +54,7 @@ jobs:
               // npm <=11 prints an array, newer npm an object keyed by package name.
               const [packed] = Object.values(JSON.parse(input));
               const files = (packed?.files ?? []).map((file) => file.path);
-              const allowed = /^(LICENSE|README\.md|package\.json)$|^(bin|lib|core|presets|skills|hooks)\//;
+              const allowed = /^(LICENSE|README\.md|CHANGELOG\.md|package\.json)$|^(bin|lib|core|presets|skills|hooks)\//;
               const unexpected = files.filter((file) => !allowed.test(file));
               const missing = ["bin/cli.mjs", "README.md"].filter((file) => !files.includes(file));
               if (!files.length || unexpected.length || missing.length) {

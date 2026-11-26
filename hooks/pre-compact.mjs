@@ -2,26 +2,63 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { readCooldowns, summarize } from './_quota.mjs';
 import {
-  COOLDOWN_FILE, configDirOf, displayPath, effectiveAllowlist, isObject, loadConfig, prop, readJson, readPayload, run, warn,
-  which,
+  AVAILABILITY_FILE, COOLDOWN_FILE, configDirOf, displayPath, effectiveAllowlist, isObject, loadConfig, matchRetired, prop,
+  readAvailability, readJson, readPayload, restrictedBy, run, warn, which,
 } from './_shared.mjs';
 
 const joinNames = (names) =>
   names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 
+const LIST_LIMIT = 20;
+const listed = (items) => {
+  if (items.length === 0) return 'none';
+  const more = items.length > LIST_LIMIT ? `, +${items.length - LIST_LIMIT} more` : '';
+  return `${items.slice(0, LIST_LIMIT).join(', ')}${more}`;
+};
+
+/** Active availability restrictions as "provider:model (status)". */
+function unavailable(configDir) {
+  const { data } = readAvailability(path.join(configDir, AVAILABILITY_FILE));
+  return Object.keys(data?.models ?? {}).flatMap((ref) => {
+    // The file's text goes into the session context, so only plain refs are echoed.
+    const [, host, model] = ref.match(/^([a-z]{1,20}):([\w.-]{1,60})$/i) ?? [];
+    const entry = model && restrictedBy(data, host, model);
+    return entry ? [`${ref} (${entry.status})`] : [];
+  });
+}
+
+function activeLocks(configDir) {
+  try {
+    // The first summary line is a heading.
+    const lines = summarize(readCooldowns(path.join(configDir, COOLDOWN_FILE))).slice(1);
+    return lines.length ? lines.map((line) => `\n   - ${line}`).join('') : '\n   - Active locks: none';
+  } catch (error) {
+    warn(`ignoring ${COOLDOWN_FILE} (${error.name})`);
+    return '\n   - Active locks: unknown (file unreadable)';
+  }
+}
+
 function rules(configDir) {
   const config = loadConfig(configDir);
-  const groups = effectiveAllowlist(config);
+  const groups = effectiveAllowlist(config)
+    .map(([provider, models]) => [provider, models.filter((m) => !matchRetired(m, config.retiredModels))])
+    .filter(([, models]) => models.length > 0);
   const count = groups.reduce((total, [, models]) => total + models.length, 0);
   const allowed = groups.map(([provider, models]) => `${models.join(', ')} (${provider})`).join('; ');
   const banned = config.bannedModels;
   const bannedText = banned.length ? ` ${joinNames(banned)} ${banned.length > 1 || banned[0].includes('/') ? 'are' : 'is'} strictly banned.` : '';
+  const scarce = config.models.filter((m) => m.scarceQuota).map((m) => `${m.provider}:${m.model} [${m.pool ?? 'standard'}]`);
   return `MANDATORY COMPACTION PRESERVATION RULES:
 When summarizing this session, you MUST preserve verbatim:
 1. STRICT ${count}-MODEL ALLOWLIST: Only ${allowed}.${bannedText}
+   - Retired (always blocked): ${listed(config.retiredModels)}
+   - Plan-restricted: ${listed(config.planRestrictedModels)}
+   - Unavailable now: ${listed(unavailable(configDir))}
+   - Scarce pools (overflow/escalation only): ${listed(scarce)}
 2. ORCHESTRATOR STATE (if $auto-build is active): Active inline flags (--fast/--strict/--plan-only/--budget/etc.), complexity tier (L0-L3), full REPO_BRIEF, IMPLEMENTER_PROVIDER, in-run EXHAUSTED models, current pipeline step, files modified so far, and exact failing test/audit file:line items.
-3. COOLDOWN STATE: Any active rate-limit/quota cooldowns recorded in ${displayPath(configDir, COOLDOWN_FILE)}.
+3. COOLDOWN STATE: Any active rate-limit/quota cooldowns recorded in ${displayPath(configDir, COOLDOWN_FILE)}.${activeLocks(configDir)}
 4. ACTIVE SESSION STATE (all threads): Preserve a compact digest of:
    - Key architectural/constraint decisions already agreed upon.
    - Files already inspected or modified (so you do NOT re-read unchanged files after compaction).

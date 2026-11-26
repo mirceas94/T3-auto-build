@@ -4,8 +4,8 @@
 
 | Version | Supported |
 |---|---|
-| 1.0.x | Yes |
-| Any other | No |
+| 2.x | Yes |
+| 1.x and older | No, including security fixes. Upgrade, then run `t3-auto-build upgrade` |
 
 ## Reporting a vulnerability
 
@@ -32,20 +32,54 @@ The guards apply only when the hooks are installed and wired into `settings.json
 | Secret files | `Edit`, `Write`, `MultiEdit` | A `file_path` for `.env` or `.env.*`, ending in `.pem`, `.key`, `.p12` or `.pfx`, or containing `id_rsa` or `id_ed25519` |
 | Git | `Bash` | Text matching `git push` followed by `-f` or `--force`, or `git reset --hard` |
 | Recursive `rm` | `Bash` | A recursive `rm` aimed at an absolute, drive or home path, a command substitution, the current directory, `*`, a `..` or `.git` segment, or a dot-file glob. A command too costly to scan is also blocked |
+| Speed modes | `delegate_task` | A fast or priority mode, unless the config sets `allowFastModes` |
+| Provider conflicts | `delegate_task` | Two different known providers, or a model on a provider that does not host it |
+| Retired models | `delegate_task` | A retired model, whatever the config allows |
 | Delegate models | `delegate_task` | A banned or non-allowlisted model |
-| Cooldowns | `delegate_task` | A model, provider or heavy tier with an active cooldown |
+| Plan and availability | `delegate_task` | A model the config lists as plan-restricted, or an unexpired `plan-restricted` or `unavailable` availability entry |
+| Cooldowns | `delegate_task` | A model, provider or model pool with an active cooldown |
+| Input shape | Any hooked tool | Parsed input that names a tool but whose `tool_input` is present and not an object |
 
-The model and provider fields are read from the top level of the tool input and from `target`.
+The model and provider fields (`model`; `provider`, `providerInstanceId`, `driverKind`) are read from the
+top level of the tool input and from `target`.
+
+### Speed-mode guard
+
+The hook scans the whole `delegate_task` input, up to 6 levels deep, including `{ id, value }` option
+pairs. It blocks a key containing `fast`, `speed` or `serviceTier` (case and punctuation ignored) whose
+value is `true`, `fast`, `ultrafast` or `priority`. Only `allowFastModes: true` in a v2 config turns it
+off. It applies even when the call names no model.
+
+### Provider resolution and cooldowns
+
+- With no known provider named, a model resolves to its native provider (`claude-*` to Claude, `gpt-*`
+  to Codex, `gemini-*` to Antigravity). An unknown provider alias does not change that, so it cannot
+  bypass a `provider:claude` lock.
+- A model is cross-hosted only when the call names the hosting provider explicitly **and** the config's
+  `models` list declares that model on it. Naming a provider that does not host the model is blocked.
+- A `provider:claude` lock does not cover a declared Antigravity-hosted Claude model, which spends
+  Antigravity quota. Lock it with `provider:antigravity`, `tier:antigravity:third-party-claude` or a
+  model key.
+
+### Retired models
+
+Retired models are a hard ban built into the hooks (`RETIRED_MODELS` in `hooks/_shared.mjs`). A config
+can add to the list but cannot shrink it, and allowlisting a retired model does not enable it.
 
 ### Fail-open behavior
 
-- Empty or malformed hook input, and unexpected errors inside the hook, allow the tool call.
+- Empty or unparsable hook input, and unexpected errors inside the hook, allow the tool call.
+- Input that parses but has an invalid shape (see "Input shape" above) is blocked.
+- A missing or malformed availability file restricts nothing.
 - An unreadable cooldown file, or an invalid cooldown entry, is ignored with a warning. Other valid
   entries still apply.
-- An invalid or unreadable config does **not** disable the allowlist: the affected settings fall back
-  to preset defaults.
-- A `delegate_task` call without a model skips the allowlist check. Provider cooldowns still apply
-  when it names a provider.
+- An invalid or unreadable config does **not** disable the allowlist or the built-in retired-model ban:
+  an invalid setting falls back to its default, and an unreadable file or an unknown `schemaVersion`
+  falls back to the default config. Your own bans and plan restrictions in the discarded settings are
+  **not** applied until you fix the file.
+- A `delegate_task` call without a model skips every model check (conflict, retired, banned, plan,
+  availability and allowlist). The speed-mode guard still applies, as do provider cooldowns when the
+  call names a provider.
 
 ### Out of scope
 
@@ -60,8 +94,9 @@ Bypasses of the following kinds are known limits, not vulnerabilities:
 - Any other tool, including other shells, notebook edits, other MCP tools, and other ways to start an
   agent.
 - Reading secret files, writing them through `Bash`, or secret files with names not listed above.
-- Changes to the hooks, `settings.json`, the config or the cooldown file by anyone who can write
-  them. The guards do not protect these files.
+- Speed modes requested under other key names or values, or nested deeper than the scan.
+- Changes to the hooks, `settings.json`, the config, the cooldown file or the availability file by
+  anyone who can write them. The guards do not protect these files.
 - False positives, such as `echo rm -rf .` being blocked. Report these as normal bugs.
 
 A documented guard that fails on a plain, direct form of what it claims to block is in scope.
@@ -73,10 +108,15 @@ A documented guard that fails on a plain, direct form of what it claims to block
 - `init` reads `settings.json` and, when it changes it, keeps `settings.json.bak`. The backup holds
   everything the original held, including any secret stored there.
 - There is no telemetry, and the package's own code opens no network connections.
-- It runs official provider CLIs, which may use the network, only for model probes (`sync-models`,
-  `init --probe`) and login status checks (`quota check`). Probes spend real quota.
+- It runs official provider CLIs, which may use the network, for model probes (`sync-models`,
+  `init --probe`, and `check-models` when its cache is stale or with `--refresh`), version checks
+  (`check-models`, `doctor`) and login status checks (`quota check`). Probes spend real quota. The
+  installed `$auto-build` skill runs `check-models` before it delegates. Scarce-quota models are
+  probed only with `--probe-scarce`.
 - Those CLIs use their own stored login and inherit your environment. An API key variable may cause
   probes to be billed to the API.
+- `check-models` also runs any command listed under `discovery` in the config. Treat the config as
+  executable: do not use one you did not write or review.
 - Hooks also run local tools found on `PATH`: `git` in the project directory, and the formatters
   `biome`, `prettier`, `ruff` or `gofmt` on edited files. These tools can load project configuration,
   and some formatters load project plugins, so treat an untrusted repository accordingly.

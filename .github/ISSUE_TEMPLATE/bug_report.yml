@@ -14,7 +14,7 @@ body:
     attributes:
       label: t3-auto-build version
       description: Output of `t3-auto-build --version` (from a clone, `node bin/cli.mjs --version`). If your version lacks the flag, copy `version` from `package.json`.
-      placeholder: "1.0.1"
+      placeholder: "2.0.0"
     validations:
       required: true
   - type: dropdown
@@ -35,6 +35,30 @@ body:
       description: Output of `node --version`.
     validations:
       required: true
+  - type: dropdown
+    id: claude-tier
+    attributes:
+      label: Claude tier
+      description: The value of `subscriptions.claude` in `auto-build.config.json`.
+      options: [none, free, pro, max, ultra, team-standard, team-premium, api, not sure or v1 config]
+    validations:
+      required: true
+  - type: dropdown
+    id: codex-tier
+    attributes:
+      label: Codex tier
+      description: The value of `subscriptions.codex`.
+      options: [none, free, go, plus, pro-100, pro-200, pro-500, business, api, not sure or v1 config]
+    validations:
+      required: true
+  - type: dropdown
+    id: antigravity-tier
+    attributes:
+      label: Antigravity tier
+      description: The value of `subscriptions.antigravity`.
+      options: [none, free, plus, pro-trial, pro, ultra-5x, ultra-20x, not sure or v1 config]
+    validations:
+      required: true
   - type: textarea
     id: repro
     attributes:
@@ -49,10 +73,22 @@ body:
     validations:
       required: true
   - type: textarea
+    id: doctor
+    attributes:
+      label: Doctor output
+      description: Output of `t3-auto-build doctor`. Redact paths and tokens.
+      render: shell
+  - type: textarea
+    id: check-models
+    attributes:
+      label: Model availability
+      description: Output of `t3-auto-build check-models --json`. If its cache is stale, this runs model probes, which spend quota. Redact paths and tokens.
+      render: shell
+  - type: textarea
     id: logs
     attributes:
-      label: Output
-      description: Relevant output, for example from `t3-auto-build doctor`. Redact paths and tokens.
+      label: Other output
+      description: Any other relevant output. Redact paths and tokens.
       render: shell
   - type: checkboxes
     id: redacted

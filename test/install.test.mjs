@@ -24,6 +24,16 @@ test('presets allowlist 9, 6 and 3 models and defaults match tri-provider', () =
   for (const name of PRESETS) assert.deepEqual(Object.keys(loadPreset(name).ladders), LADDERS);
   assert.deepEqual(loadPreset('tri-provider').allowlist, DEFAULTS.allowlist);
   assert.deepEqual(loadPreset('tri-provider').bannedModels, DEFAULTS.bannedModels);
+  const providers = {
+    'tri-provider': ['Codex', 'Antigravity', 'Claude'],
+    'claude-codex': ['Codex', 'Claude'],
+    'claude-only': ['Claude'],
+  };
+  for (const preset of PRESETS) {
+    const config = loadPreset(preset);
+    assert.deepEqual(config.allowlist, Object.fromEntries(providers[preset].map((name) => [name, DEFAULTS.allowlist[name]])), preset);
+    assert.deepEqual(config.bannedModels, DEFAULTS.bannedModels, preset);
+  }
 });
 
 test('unresolved template slots throw', () => {

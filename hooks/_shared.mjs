@@ -7,14 +7,21 @@ import { fileURLToPath } from 'node:url';
 
 export const CONFIG_FILE = 'auto-build.config.json';
 export const COOLDOWN_FILE = 'auto-build-cooldowns.json';
+export const AVAILABILITY_FILE = 'auto-build-availability.json';
+export const SCHEMA_VERSION = 2;
+
+/** Always blocked: config can add to this list, never shrink it. */
+export const RETIRED_MODELS = Object.freeze([
+  'gemini-4-argon', 'gemini-3.8-flash', 'claude-4.6', 'claude-4.6-*', 'gpt-5.4', 'gpt-5.4-*', 'gpt-5.5', 'gpt-5.5-*',
+]);
 
 export const DEFAULTS = {
   allowlist: {
-    Codex: ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-6-luna'],
+    Codex: ['gpt-6-luna', 'gpt-6.1-terra', 'gpt-6.1-sol'],
     Antigravity: ['Gemini 4 Hydrogen', 'Gemini 4 Neon', 'Gemini 4 Carbon'],
     Claude: ['Claude Haiku 5.5', 'Claude Sonnet 5.5', 'Claude Opus 5.5'],
   },
-  bannedModels: ['Argon', 'Fable/Mythos'],
+  bannedModels: [],
 };
 
 export const warn = (message) => process.stderr.write(`t3-auto-build: ${message}\n`);
@@ -67,6 +74,65 @@ export function modelKeys(model, config) {
   return keys;
 }
 
+/** True when the model is a retired one; a pattern ending "-*" also covers every "<stem>-..." variant. */
+export function matchRetired(model, patterns = RETIRED_MODELS) {
+  if (typeof model !== 'string') return false;
+  const key = (name) => normalizeName(normalizeModel(name.trim())).replace(/^-+|-+$/g, '');
+  const name = key(model);
+  return patterns.some((pattern) => {
+    const family = pattern.endsWith('-*');
+    const stem = key(family ? pattern.slice(0, -2) : pattern);
+    return name === stem || (family && name.startsWith(`${stem}-`));
+  });
+}
+
+// T3 provider ids to provider keys. Custom instances (codex-2) resolve by driverKind or this prefix.
+export const PROVIDER_ALIASES = new Map([
+  ['claudeagent', 'claude'], ['claude', 'claude'], ['codex', 'codex'], ['antigravity', 'antigravity'],
+]);
+
+/** 'claude' | 'codex' | 'antigravity' from a provider or instance id, else null. */
+export function canonicalProvider(id) {
+  if (typeof id !== 'string') return null;
+  const compact = id.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const alias = [...PROVIDER_ALIASES.keys()].find((prefix) => compact.startsWith(prefix));
+  return PROVIDER_ALIASES.get(alias) ?? null;
+}
+
+/**
+ * Which hosting a request means. A bare model resolves to its native provider; another provider hosts it only when
+ * named explicitly and declared in config.models. A set `conflict` means the request must not be trusted.
+ */
+export function resolveTarget({ providers = [], model } = {}, config) {
+  const list = Array.isArray(providers) ? providers : [providers];
+  const canon = [...new Set(list.map(canonicalProvider).filter(Boolean))];
+  const name = typeof model === 'string' && model ? model : null;
+  const inferred = inferProvider(name);
+  const declared = canon[0] ?? null;
+  const provider = declared ?? inferred;
+  let entry = null;
+  if (name && provider) {
+    const keys = modelKeys(name, config);
+    const models = Array.isArray(config?.models) ? config.models : [];
+    entry = models.find((item) => typeof item?.model === 'string' && canonicalProvider(item.provider) === provider
+      && [...modelKeys(item.model, config)].some((key) => keys.has(key))) ?? null;
+  }
+  let conflict = null;
+  if (canon.length > 1) conflict = `conflicting providers: ${canon.join(', ')}`;
+  else if (declared && !entry && inferred && declared !== inferred) {
+    conflict = `model ${name} is not hosted on provider ${declared}`;
+  }
+  return {
+    provider,
+    model: name,
+    entry,
+    pool: entry?.pool ?? 'standard',
+    scarceQuota: Boolean(entry?.scarceQuota),
+    crossHosted: provider !== inferred && Boolean(entry),
+    conflict,
+  };
+}
+
 /** Banned entries match as substrings of the raw or normalized name; "A/B" bans both A and B. */
 export function isBanned(model, bannedModels) {
   const name = model.toLowerCase();
@@ -95,7 +161,18 @@ function presetDefaults(preset) {
   return { ...DEFAULTS, allowlist };
 }
 
-/** Missing or invalid keys come from the config's own preset, as in the installer. */
+export const isV2 = (raw) => raw?.schemaVersion === SCHEMA_VERSION;
+
+const isModelList = (v) => Array.isArray(v) && v.every((m) => isObject(m) && isStringList([m.provider, m.model])
+  && (m.pool === undefined || typeof m.pool === 'string')
+  && (m.scarceQuota === undefined || typeof m.scarceQuota === 'boolean'));
+const isBoolean = (v) => typeof v === 'boolean';
+const isCount = (v) => Number.isInteger(v) && v >= 0;
+
+/**
+ * Missing or invalid keys come from the config's own preset, as in the installer. An unreadable file or an unknown
+ * schemaVersion gives DEFAULTS, so an allowlist is always enforced.
+ */
 export function loadConfig(configDir) {
   let raw = {};
   try {
@@ -105,17 +182,40 @@ export function loadConfig(configDir) {
     if (error.code !== 'ENOENT') warn(`ignoring ${CONFIG_FILE} (${error.name}); using defaults`);
     raw = {};
   }
+  if (raw.schemaVersion !== undefined && !isV2(raw)) {
+    warn(`unknown "schemaVersion" in ${CONFIG_FILE}; using defaults`);
+    raw = {};
+  }
+  const v2 = isV2(raw);
   const defaults = presetDefaults(raw.preset);
-  const pick = (key, valid) => {
-    if (raw[key] === undefined) return defaults[key];
+  const pick = (key, valid, fallback = defaults[key]) => {
+    if (raw[key] === undefined) return fallback;
     if (valid(raw[key])) return raw[key];
     warn(`invalid "${key}" in ${CONFIG_FILE}; using default`);
-    return defaults[key];
+    return fallback;
   };
-  const config = { allowlist: pick('allowlist', isAllowlist), bannedModels: pick('bannedModels', isStringList) };
-  // Optional keys: present only when set to an object.
-  for (const key of ['tiers', 'modelIds']) {
-    const value = pick(key, isObject);
+  const config = {
+    schemaVersion: v2 ? SCHEMA_VERSION : 1,
+    allowlist: pick('allowlist', isAllowlist),
+    bannedModels: pick('bannedModels', isStringList),
+    retiredModels: [...RETIRED_MODELS],
+    planRestrictedModels: [],
+    models: [],
+    allowFastModes: false,
+  };
+  const optional = [['tiers', isObject], ['modelIds', isObject]];
+  if (v2) {
+    // Both ban lists apply.
+    config.bannedModels = [...new Set([...config.bannedModels, ...pick('userBannedModels', isStringList, [])])];
+    config.retiredModels = [...new Set([...RETIRED_MODELS, ...pick('retiredModels', isStringList, [])])];
+    config.planRestrictedModels = pick('planRestrictedModels', isStringList, []);
+    config.models = pick('models', isModelList, []);
+    config.allowFastModes = pick('allowFastModes', isBoolean, false);
+    optional.push(['subscriptions', isObject], ['maxParallelBuilders', isCount]);
+  }
+  // Optional keys: present only when set to a valid value.
+  for (const [key, valid] of optional) {
+    const value = pick(key, valid);
     if (value !== undefined) config[key] = value;
   }
   return config;
@@ -142,6 +242,58 @@ export function prop(object, name) {
   if (Object.prototype.hasOwnProperty.call(object, name)) return object[name];
   const key = Object.keys(object).find((k) => k.toLowerCase() === name.toLowerCase());
   return key === undefined ? undefined : object[key];
+}
+
+/** Why a parsed payload must be blocked: it names a tool but its input is not an object. Else null. */
+export function payloadProblem(payload) {
+  const tool = prop(payload, 'tool_name');
+  if (typeof tool !== 'string' || tool === '') return null;
+  const input = prop(payload, 'tool_input');
+  return input === undefined || isObject(input) ? null : `tool_input of '${tool}' is not an object`;
+}
+
+const FAST_KEY = /fast|speed|servicetier/i;
+const FAST_VALUE = /^(true|fast|ultrafast|priority)$/i;
+const FAST_DEPTH = 6;
+
+/** True when a tool input asks for a fast or priority mode, as a key or as an {id, value} option pair. */
+export function fastModeRequested(input, depth = 1) {
+  if (depth > FAST_DEPTH || input === null || typeof input !== 'object') return false;
+  const asks = (key, value) => typeof key === 'string' && FAST_KEY.test(key.replace(/[^a-z0-9]/gi, ''))
+    && (value === true || (typeof value === 'string' && FAST_VALUE.test(value)));
+  if (asks(prop(input, 'id'), prop(input, 'value'))) return true;
+  return Object.entries(input).some(([key, value]) => asks(key, value) || fastModeRequested(value, depth + 1));
+}
+
+const AVAILABILITY_TTL = 12 * 60 * 60_000;
+
+/** { data, stale } of the availability file; data is null when it is missing or malformed. Never throws. */
+export function readAvailability(file, now = Date.now()) {
+  try {
+    const data = readJson(file);
+    if (isObject(data) && data.schemaVersion === 1 && isObject(data.models)) {
+      const ttl = data.ttlMs > 0 ? data.ttlMs : AVAILABILITY_TTL;
+      return { data, stale: !(now - Date.parse(data.checkedAt) < ttl) };
+    }
+  } catch {
+    // reported as no data
+  }
+  return { data: null, stale: true };
+}
+
+/** The entry restricting provider:model, or null. Takes readAvailability's data (or its whole result). */
+export function restrictedBy(availability, provider, model, now = Date.now()) {
+  const wanted = canonicalProvider(provider);
+  if (!wanted || typeof model !== 'string') return null;
+  const keys = modelKeys(model);
+  const models = (availability?.data ?? availability)?.models;
+  return Object.entries(isObject(models) ? models : {}).find(([ref, entry]) => {
+    const [, host, name] = ref.match(/^([^:]+):(.+)$/) ?? [];
+    return name !== undefined && canonicalProvider(host) === wanted && [...modelKeys(name)].some((key) => keys.has(key))
+      && ['plan-restricted', 'unavailable'].includes(entry?.status)
+      // An unreadable "until" keeps the restriction.
+      && (entry.until === undefined || !(Date.parse(entry.until) <= now));
+  })?.[1] ?? null;
 }
 
 /** PowerShell-like "$($value)" stringification. */

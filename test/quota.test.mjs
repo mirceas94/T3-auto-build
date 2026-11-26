@@ -44,6 +44,54 @@ test('prune, isLocked, and summarize honor expiry, provider/model/tier keys and 
   assert.deepEqual(summarize({}, NOW), []);
 });
 
+test('v2 cooldown keys distinguish model identity, hosting, provider aliases, and tier pools', (t) => {
+  const lock = (key) => ({ [key]: { scope: key.split(':', 1)[0], window: '5h', until: after(60_000), reason: 'test' } });
+  const config = {
+    models: [
+      { provider: 'claude', model: 'claude-sonnet-5-5', pool: 'standard', scarceQuota: false },
+      { provider: 'claude', model: 'claude-opus-5-5', pool: 'standard', scarceQuota: false },
+      { provider: 'claude', model: 'claude-fable-5-2', pool: 'fable', scarceQuota: true },
+      { provider: 'codex', model: 'gpt-6-astra', pool: 'astra', scarceQuota: true },
+      { provider: 'antigravity', model: 'claude-opus-5-5', pool: 'third-party-claude', scarceQuota: true },
+      { provider: 'antigravity', model: 'claude-sonnet-5-5', pool: 'third-party-claude', scarceQuota: true },
+    ],
+  };
+  const hit = (key, request, cfg = config) => isLocked(lock(key), { ...request, config: cfg }, NOW)?.key ?? null;
+
+  assert.equal(hit('provider:work', { provider: 'work', model: 'my-model' }), 'provider:work');
+  assert.equal(hit('provider:codex-2', { provider: 'codex', model: 'gpt-6-luna' }), null);
+  assert.equal(hit('provider:codex', { provider: 'unknown-custom', model: 'gpt-6-luna' }), 'provider:codex');
+  assert.equal(hit('provider:claude', { providers: ['antigravity'], model: 'claude-opus-5-5' }), null);
+  assert.equal(hit('tier:antigravity:third-party-claude', { providers: ['antigravity'], model: 'claude-opus-5-5' }), 'tier:antigravity:third-party-claude');
+  assert.equal(hit('provider:codex', { provider: 'codex', model: 'claude-sonnet-5-5' }), 'provider:codex');
+  assert.equal(hit('provider:claude', { provider: 'codex', model: 'claude-sonnet-5-5' }), 'provider:claude');
+
+  assert.equal(hit('model:antigravity:claude-sonnet-5-5', { model: 'claude-sonnet-5-5' }), null);
+  assert.equal(hit('model:claude:claude-sonnet-5-5', { model: 'claude-sonnet-5-5' }), 'model:claude:claude-sonnet-5-5');
+  assert.equal(hit('model:claude-sonnet-5-5', { model: 'claude-sonnet-5-5' }), 'model:claude-sonnet-5-5');
+  assert.equal(hit('model:claude-sonnet-5-5', { providers: ['antigravity'], model: 'claude-sonnet-5-5' }), 'model:claude-sonnet-5-5');
+
+  const legacy = lock('tier:claude:heavy');
+  assert.equal(isLocked(legacy, { model: 'claude-opus-5-5', config }, NOW)?.key, 'tier:claude:heavy');
+  assert.equal(isLocked(legacy, { model: 'claude-fable-5-2', config }, NOW)?.key, 'tier:claude:heavy');
+  assert.equal(isLocked(lock('tier:codex:heavy'), { model: 'gpt-6-astra', config }, NOW)?.key, 'tier:codex:heavy');
+  assert.ok(summarize(lock('tier:antigravity:third-party-claude'), NOW).join('\n').includes('third-party-claude'));
+});
+
+test('cooldown validation accepts provider-qualified models and pool tier keys', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 't3-quota-keys-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'cooldowns.json');
+  write(file, {
+    'model:antigravity:claude-sonnet-5-5': { scope: 'model', until: after(60_000) },
+    'tier:codex:third-party-claude': { scope: 'tier', until: after(60_000) },
+    'tier:codex:bad_pool': { scope: 'tier', until: after(60_000) },
+  });
+  assert.deepEqual(Object.keys(readCooldowns(file, () => {})), [
+    'model:antigravity:claude-sonnet-5-5', 'tier:codex:third-party-claude',
+  ]);
+});
+
 test('rate limit parsing handles burst retry, 5h, weekly reset, and heavy-tier sharing', () => {
   assert.deepEqual(parseRateLimit('429 Too Many Requests', { now: NOW, retryAfter: '30' }), {
     window: 'burst', scope: 'model', until: after(30_000),
