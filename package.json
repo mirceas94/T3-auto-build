@@ -1,6 +1,6 @@
 {
   "name": "t3-auto-build",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Cross-platform installer and $auto-build orchestration suite for T3 Code.",
   "type": "module",
   "bin": {
