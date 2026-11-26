@@ -27,16 +27,18 @@ hooks for guardrails. No dependencies. Node 18.18 or newer.
 
 Upgrading from 1.x? Read [Migrating from v1](#migrating-from-v1) and the [changelog](CHANGELOG.md).
 
-## 60-second Quick Start
+## Quick Start
+
+### New install
 
 1. Install into your Claude config directory, naming your plans (see the [tier matrix](#subscription-tiers)):
 
    ```sh
-   npx t3-auto-build init --claude-tier max --codex-tier plus --antigravity-tier pro --yes
+   npx t3-auto-build@2.1.0 init --claude-tier max --codex-tier plus --antigravity-tier pro --yes
    ```
 
-   Plain `npx t3-auto-build init` asks instead. From a clone, use `node bin/cli.mjs` in place of
-   `npx t3-auto-build`. `init` prints what it resolved:
+   Plain `npx t3-auto-build@2.1.0 init` asks instead. From a clone, use `node bin/cli.mjs` in place
+   of `npx t3-auto-build@2.1.0`. `init` prints what it resolved:
 
    ```text
    provider    | tier | CLI | models (standard)                                    | scarce overflow                    | max parallel
@@ -50,19 +52,35 @@ Upgrading from 1.x? Read [Migrating from v1](#migrating-from-v1) and the [change
    > `init --yes` **without** a tier flag on a fresh directory writes a legacy v1
    > [preset](#legacy-presets) config, not a subscription profile.
 
-2. Check the installation and fill the availability cache:
+2. Verify the install and fill the availability cache:
 
    ```sh
-   npx t3-auto-build doctor
-   npx t3-auto-build check-models
+   npx t3-auto-build@2.1.0 doctor
+   npx t3-auto-build@2.1.0 check-models
    ```
 
-   `check-models` sends real prompts when its cache is stale. See [availability](#availability-checks).
+   `check-models` sends real prompts only when its `12h` cache is stale. See
+   [Availability checks](#availability-checks).
 
 3. **Restart T3 Code** (and any running Claude Code session). Hooks and `settings.json` changes
    load only at startup.
 
 4. In a T3 Code thread, run `$auto-build <task>`. See [workflow](#auto-build-workflow) for flags.
+
+### Upgrade & read-only inspection (`2.1.0`)
+
+Already installed? Upgrade a v1 config to v2, verify your setup, and inspect quotas, availability,
+and pending model drift without writing files or spending probe quota:
+
+```sh
+npx t3-auto-build@2.1.0 upgrade
+npx t3-auto-build@2.1.0 doctor
+
+# Read-only inspection (no config writes, no live probes)
+npx t3-auto-build@2.1.0 quota status
+npx t3-auto-build@2.1.0 availability status
+npx t3-auto-build@2.1.0 sync-models --apply --dry-run
+```
 
 The skill calls `t3-auto-build ...`. From a clone, `npm link` puts that command on `PATH`.
 Without it the skill reads the cooldown and availability files directly.
@@ -177,7 +195,20 @@ t3-auto-build availability mark antigravity:claude-opus-5-5 plan-restricted --tt
 t3-auto-build availability status
 ```
 
-### Model drift
+### Model drift (safe by default)
+
+Model discovery and drift adoption are conservative by default:
+
+- **`12h` availability cache window:** `check-models` reuses cached probe results for `12h` and
+  only re-probes standard-pool models once the cache ages past `12h` (or on `--refresh`). Scarce
+  models are never probed unless you pass `--probe-scarce`.
+- **Unknown models stay disabled until allowlisted:** Discovery adapters report newly seen IDs and
+  missing configured models, but nothing is enabled automatically. Unknown model families stay
+  disabled until you explicitly allowlist them in `auto-build.config.json`. Retired, user-banned,
+  and plan-restricted IDs are never promoted.
+- **Preview before applying:** Run `sync-models --apply --dry-run` first to review proposed
+  same-family version upgrades without modifying `auto-build.config.json` or `SKILL.md` (and
+  without running live probes).
 
 No provider CLI listing is built in. To detect new or missing models, add an adapter per provider to
 the config: an argv array whose stdout is a JSON array or a newline list of model ids.
@@ -188,18 +219,18 @@ the config: an argv array whose stdout is a JSON array or a newline list of mode
 
 `list-codex-models.mjs` is a placeholder for your own script. Adapters run in an empty temp
 directory, so use absolute paths. `check-models` then reports ids that
-are not configured, and configured native models the adapter did not list. Nothing is allowed
-automatically. To adopt newer versions:
+are not configured, and configured native models the adapter did not list. To preview and adopt
+newer versions of existing families:
 
 ```sh
 t3-auto-build check-models
-t3-auto-build sync-models --apply
+t3-auto-build sync-models --apply --dry-run   # preview only; writes nothing, runs no probes
+t3-auto-build sync-models --apply             # backs up config and re-renders SKILL.md
 ```
 
-`--apply` runs no probes. It reads the availability cache and replaces a configured model with a
-newer version of the same family, keeping its pool and ladder position. Retired, banned and
-plan-restricted ids are never promoted; unknown families are reported and stay disabled. It backs up
-the config and re-renders `SKILL.md`. It needs an `auto-build` or `full` install.
+`--apply` reads the availability cache and replaces a configured model with a newer version of the
+same family, keeping its pool and ladder position, then backs up the config and re-renders
+`SKILL.md`. It needs an `auto-build` or `full` install.
 
 ## Model bans
 
@@ -231,7 +262,7 @@ Triage sizes the task, `L2`/`L3` plan and build in waves (foundations, core, tes
 
 ```mermaid
 flowchart TD
-  start["auto-build request"] --> step0["Step 0: lockouts, git baseline, resume"]
+  start["auto-build request"] --> step0["Step 0: check-models, lockouts, git baseline, resume"]
   step0 --> triage["Triage: REPO_BRIEF, level and shape"]
   triage -->|"L0 / L1"| single["Single builder"]
   triage -->|"L2 / L3"| plan["Plan (cross-check on L3)"]
@@ -245,8 +276,9 @@ flowchart TD
   verify -->|"passed"| report["Optional commit and report"]
 ```
 
-1. **Step 0:** run `t3-auto-build check-models`, check lockouts and restrictions, record the
-   `git status` baseline, resume if asked.
+1. **Step 0:** run `t3-auto-build check-models` (`12h`-cached availability and lock rechecks) and
+   `t3-auto-build quota status`, check lockouts and restrictions, record the `git status` baseline,
+   and resume if asked.
 2. **Triage:** write a short `REPO_BRIEF` (using the cached `.claude/repo-profile.md`) and pick the
    level `L0` to `L3` and work shape `A` (multi-file, UI) or `B` (algorithms, debugging).
 3. **Plan** (`L2`/`L3`), cross-checked by another provider on `L3` when available.
@@ -291,7 +323,7 @@ restrictions):
 |---|---|
 | Saving primary quota, lightweight triage, or small tasks | `gemini-4-neon`, `gpt-6-luna` |
 | General multi-file or UI orchestration | `claude-sonnet-5-5`, `gemini-4-neon` |
-| Deeper debugging, architecture, or high-risk `L2`/`L3` coordination | `gpt-5.6-terra`, `claude-opus-5-5`, `gemini-4-carbon` |
+| Deeper debugging, architecture, or high-risk `L2`/`L3` coordination | `gpt-6.1-terra`, `gpt-6.1-sol`, `claude-opus-5-5`, `gemini-4-carbon` |
 
 Two practical nuances to keep in mind:
 
@@ -312,7 +344,7 @@ Two practical nuances to keep in mind:
 t3-auto-build init
 t3-auto-build upgrade [--yes]
 t3-auto-build check-models [--refresh] [--probe-scarce] [--recheck-locks] [--json]
-t3-auto-build sync-models [--auto] [--refresh] [--probe-scarce] [--apply]
+t3-auto-build sync-models [--auto] [--refresh] [--probe-scarce] [--apply] [--dry-run]
 t3-auto-build availability mark <provider:model> <available|plan-restricted|unavailable> [--ttl 24h] [--reason <text>]
 t3-auto-build availability status
 t3-auto-build quota set <subject>
@@ -331,7 +363,7 @@ t3-auto-build uninstall
 | `sync-models` | Probes models and updates the allowlist, or applies drift with `--apply`. |
 | `availability mark\|status` | Sets or shows model availability. |
 | `quota set\|status\|clear\|check` | Manages cooldown locks. |
-| `doctor` | Checks files, config, hook wiring, cache age, tiers against CLI binaries, drift and optional tools. |
+| `doctor` | Checks files, config, hook wiring and smoke tests, cache age, configured tiers against CLI binaries, drift and optional tools. |
 | `uninstall` | Removes what `init` installed and the availability cache. Keeps files you changed and the cooldown file. |
 
 | Option | Applies to | Meaning |
@@ -339,7 +371,7 @@ t3-auto-build uninstall
 | `--target <dir>` | all | Config directory. Default: `$CLAUDE_CONFIG_DIR`, else `~/.claude`. |
 | `-h`, `--help` | all | Show the usage text. |
 | `-v`, `--version` | no command | Print the version. |
-| `--yes` | init, upgrade, sync-models | No prompts. Without an interactive terminal, `init` requires it, and `sync-models` requires it, `--auto` or `--dry-run`. |
+| `--yes` | init, upgrade, sync-models | No prompts. Without an interactive terminal, `init` requires it, and `sync-models` (without `--apply`) requires it, `--auto` or `--dry-run`. |
 | `--preset <name>` | init | `tri-provider`, `claude-codex` or `claude-only`. Legacy configs only. |
 | `--modules <name>` | init | `full`, `auto-build` or `core`. |
 | `--compaction <n>` | init | Integer from 1 to 100. |
@@ -359,7 +391,7 @@ t3-auto-build uninstall
 | `--json` | check-models | Machine-readable result. |
 | `--auto` | sync-models | Write without confirmation, like `--yes`. |
 | `--apply` | sync-models | Promote newer versions from recorded drift. |
-| `--dry-run` | sync-models | Probe (or preview `--apply` drift) and print the result; write nothing. **Live probes still spend real quota.** |
+| `--dry-run` | sync-models | With `--apply`, preview drift promotions from the cache (no probes, no writes). Without `--apply`, run live probes (**spends real quota**) and print the result without writing. |
 | `--providers <list>` | sync-models | Only these of `claude`, `codex`, `antigravity`; comma separated. |
 | `--ttl <duration>` | availability mark | `1m` to `30d`, default `24h`. |
 | `--pool <name>` | quota set | Lock a pool: `standard`, `fable`, `astra`, `third-party-claude`, or another lowercase name. |
@@ -367,7 +399,7 @@ t3-auto-build uninstall
 | `--reason <text>` | quota set, availability mark | Note shown by the status command. |
 | `--all` | quota clear | Remove every lock. |
 
-Exit codes: `0` success, `1` failure (invalid JSON, broken install), `2` usage error.
+Exit codes: `0` success (including informational `doctor` warnings), `1` failure (invalid JSON, broken install), `2` usage error.
 
 ```sh
 t3-auto-build init --claude-tier pro --codex-tier plus --antigravity-tier pro --parent opus
@@ -422,10 +454,10 @@ The weekday (`monday` or `mon`) is the weekly reset day, taken as 00:00 UTC.
 
 v1 configs keep loading, with the retired list enforced. To convert:
 
-1. Run the v2 package:
+1. Run the `2.1.0` package:
 
    ```sh
-   npx t3-auto-build@latest upgrade
+   npx t3-auto-build@2.1.0 upgrade
    ```
 
 2. `upgrade` assumes low paid tiers, because a v1 config does not say what you pay for: Claude `pro`,
@@ -433,7 +465,7 @@ v1 configs keep loading, with the retired list enforced. To convert:
 3. Set your real tiers:
 
    ```sh
-   npx t3-auto-build init --claude-tier max --codex-tier pro-200 --antigravity-tier pro
+   npx t3-auto-build@2.1.0 init --claude-tier max --codex-tier pro-200 --antigravity-tier pro
    ```
 
    Until then no scarce or cross-hosted model is configured.
@@ -456,34 +488,33 @@ Existing `tier:<provider>:heavy` cooldown keys are still read.
 
 ## sync-models
 
-> **`sync-models --dry-run` still executes live probes.** It spends real quota and writes nothing.
-> The [API billing warning](#availability-checks) applies.
+> **`sync-models --dry-run` (without `--apply`) executes live probes.** It spends real quota and
+> writes nothing; the [API billing warning](#availability-checks) applies. To preview drift
+> promotions without probing or writing, use `sync-models --apply --dry-run` (see
+> [Model drift (safe by default)](#model-drift-safe-by-default)).
 
-Candidates are the config allowlist, its `planRestricted` models and the preset's models (a `custom`
-config uses the `tri-provider` preset). Banned models and, without `--probe-scarce`, scarce models
-are not probed. Each other model gets a one-word prompt through `claude -p` or `codex exec`, in an
-empty temp directory with a 20 s timeout. `claude` runs with tools disabled, safe mode and no session
-persistence. `codex` runs read-only and ephemeral with `--ignore-user-config` and `--ignore-rules`,
-so your Codex user config does not apply. Antigravity has no probe support: its models report
-`unavailable` and keep their current membership.
-
-> On a v2 config, preset models count as candidates too. A successful probe can therefore add
-> allowlist entries beyond your tier, including display-name duplicates. Review the changes before you
-> confirm, or use `check-models` with `sync-models --apply`.
+On a v2 config, probe candidates come only from your tier-bound `allowlist` (preset models are not
+merged in). On a legacy v1 config, candidates are the config `allowlist`, its `planRestricted`
+models, and the preset's models (a `custom` config uses the `tri-provider` preset). Banned models
+and, without `--probe-scarce`, scarce models are not probed. Each other model gets a one-word
+prompt through `claude -p` or `codex exec`, in an empty temp directory with a 20 s timeout. `claude`
+runs with tools disabled, safe mode and no session persistence. `codex` runs read-only and ephemeral
+with `--ignore-user-config` and `--ignore-rules`, so your Codex user config does not apply.
+Antigravity has no probe support: its models report `unavailable` and keep their current membership.
 
 | State | Effect on the config |
 |---|---|
-| `available` | Added to or kept in `allowlist`; removed from `planRestricted`. |
-| `rate-limited` | Same as `available`, plus a cooldown. After a provider-wide limit the remaining models of that provider are skipped; a skipped model already in `planRestricted` stays there. |
-| `plan-restricted` | Moved from `allowlist` to `planRestricted`. |
+| `available` | Kept in `allowlist` (on v1, also added from the preset/`planRestricted` and removed from `planRestricted`; on v2, tier-derived `planRestrictedModels` are never lifted by a probe). |
+| `rate-limited` | Same as `available`, plus a cooldown (preserving the longest reset time per key across the run). After a provider-wide limit the remaining models of that provider are skipped; a skipped model already in `planRestricted` stays there. |
+| `plan-restricted` | Removed from `allowlist` and added to `planRestrictedModels` as `provider:model` (v2) or moved to `planRestricted` (v1). |
 | `unavailable` | No change (CLI missing, not logged in, timeout, unsupported or other failure). |
 
-Without `--yes` it shows the changes and asks before writing. A write backs up a changed config,
-re-renders `SKILL.md` and records cooldowns without shortening longer ones. A hand-edited `SKILL.md`
-is skipped with a warning; `--force` backs it up and overwrites it. An emptied ladder gets a
-fallback model. If no allowed model would remain, nothing is written.
-Writing needs an `auto-build` or `full` install; `--dry-run` needs only the config file.
-`init --probe` runs the same sync after installing, asking first unless `--yes`.
+Without `--yes` or `--auto`, `sync-models` (without `--apply`) shows the changes and asks before
+writing. A write backs up a changed config, re-renders `SKILL.md` and records cooldowns without
+shortening longer ones. A hand-edited `SKILL.md` is skipped with a warning; `--force` backs it up
+and overwrites it. An emptied ladder gets a fallback model. If no allowed model would remain,
+nothing is written. Writing needs an `auto-build` or `full` install; `--dry-run` needs only the
+config file. `init --probe` runs `sync-models --yes` automatically after installing.
 
 ## Quota
 
@@ -501,10 +532,13 @@ t3-auto-build quota check [provider]
   day, else 7 days. `--until` takes a future ISO time or a duration such as `90m` or `1w2d`.
 - In a v1 config whose `--tiers` plan locks only the scarce pool, `--5h` on a provider locks that
   pool.
-- Reset times parsed from rate-limit messages are capped at 14 days. A manual `--until` is not capped.
+- Reset times parsed from rate-limit messages honor explicit `UTC`/`GMT`/`Z` clock suffixes and are
+  capped at 14 days. A manual `--until` is not capped.
 - `status` drops expired locks and prints the rest.
-- `clear <provider>` (or `clear provider:<provider>`) removes its provider and pool locks, not its model locks. `clear <model>`
-  removes that model's lock. `--all` deletes the file, even a corrupt one.
+- `clear <provider>` (or `clear provider:<provider>`) removes its provider and pool locks, not its
+  model locks. `clear <model>` removes that model's lock; `clear <provider:model>` removes that
+  hosting's model lock (and any matching unqualified model lock). `--all` deletes the file, even a
+  corrupt one.
 - `check` runs `claude auth status` and `codex login status` (Antigravity has no status command). It
   reports login state only, unless the output explicitly says usage is exhausted; only then does it
   record a lock.
@@ -516,11 +550,13 @@ t3-auto-build quota check [provider]
 | Key | Locks |
 |---|---|
 | `model:<id>` | The model on every hosting. |
-| `model:<provider>:<id>` | That hosting only. |
-| `provider:<p>` | The provider. Locking `claude` does not block `antigravity:claude-opus-5-5`. |
-| `tier:<p>:<pool>` | One pool (`[a-z0-9-]+`), such as `tier:antigravity:third-party-claude`. |
+| `model:<provider>:<id>` | That hosting (or custom instance, such as `model:codex-2:<id>`) only. |
+| `provider:<p>` | The provider (or custom instance). Canonical `provider:codex` also covers `codex-2`; `provider:codex-2` covers only `codex-2`. Locking `claude` does not block `antigravity:claude-opus-5-5`. |
+| `tier:<p>:<pool>` | One pool (`[a-z0-9-]+`), such as `tier:antigravity:third-party-claude`. Custom instance keys (`tier:codex-2:<pool>`) stay isolated to that instance and do not leak to `codex`. |
 
-Legacy `tier:<p>:heavy` keys are still read, and `quota check` or a probe may still write them.
+On v2 configs, `quota check` and probes write `tier:<p>:<pool>` keys (using `heavy` only for legacy
+v1 configs or providers without a named scarce pool). Legacy `tier:<p>:heavy` keys are still read
+and are gated on provider match so they never leak across hosts.
 
 ```json
 {
@@ -654,6 +690,31 @@ they are still wired.
 
 Report vulnerabilities as described in [SECURITY.md](https://github.com/mirceas94/t3-auto-build/blob/main/SECURITY.md). To contribute,
 see [CONTRIBUTING.md](https://github.com/mirceas94/t3-auto-build/blob/main/CONTRIBUTING.md).
+
+## Troubleshooting & Common Gotchas
+
+- **Informational `doctor` warnings (missing optional provider CLIs):** `doctor` checks `PATH` for
+  the CLI binary of every provider whose tier is not `none`, as well as optional tools, and exits
+  `0` when only warnings are present (`1` only on failures). Warnings about missing provider CLIs
+  you do not invoke locally (for example, `antigravity` or a CLI you only use through T3 Code) are
+  informational and do not stop `$auto-build` from running. If you do not use a provider at all,
+  set its tier to `none` with `init` to clear the warning.
+- **Optional search and formatter tools (`rg`, `sg`, `PostToolUse` formatters):** `rg` (ripgrep)
+  and `sg` (ast-grep) are optional—`doctor` warns when they are absent, and install commands are
+  below in [Optional tools](#optional-tools). The `post-tool-use.mjs` hook formats edited files
+  using `biome`, `prettier`, `ruff`, or `gofmt` when present on `PATH`; if none are installed, it
+  silently skips formatting and never blocks edits.
+- **Keep repo-specific scripts and Actions in your project, not in `~/.claude/`:** Files under
+  `~/.claude/` (or `$CLAUDE_CONFIG_DIR`) are managed by `t3-auto-build` and tracked in
+  `t3-auto-build.manifest.json`. Keep project-specific scripts, custom `discovery` adapters, and
+  GitHub Actions workflows inside your repositories rather than editing managed `~/.claude/` files;
+  hand-edited managed files are skipped with warnings on `init`/`upgrade` (or backed up to `.bak`
+  and overwritten when `--force` is used).
+- **Keep local runtime state and cache files gitignored:** Per-repo orchestrator state
+  (`.claude/auto-build-state.json`, `.claude/repo-profile.md`) and local cache/lock/backup files
+  (`auto-build-cooldowns.json`, `auto-build-availability.json`, `*.bak`) are machine-local runtime
+  artifacts. Keep them in `.gitignore` so personal cooldowns, availability caches, and in-progress
+  wave state are never committed.
 
 ## Optional tools
 
