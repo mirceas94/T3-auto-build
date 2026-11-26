@@ -359,7 +359,7 @@ t3-auto-build uninstall
 | `--json` | check-models | Machine-readable result. |
 | `--auto` | sync-models | Write without confirmation, like `--yes`. |
 | `--apply` | sync-models | Promote newer versions from recorded drift. |
-| `--dry-run` | sync-models | Probe and print the result; write nothing. **Still spends real quota.** |
+| `--dry-run` | sync-models | Probe (or preview `--apply` drift) and print the result; write nothing. **Live probes still spend real quota.** |
 | `--providers <list>` | sync-models | Only these of `claude`, `codex`, `antigravity`; comma separated. |
 | `--ttl <duration>` | availability mark | `1m` to `30d`, default `24h`. |
 | `--pool <name>` | quota set | Lock a pool: `standard`, `fable`, `astra`, `third-party-claude`, or another lowercase name. |
@@ -568,7 +568,7 @@ A v1 config has no `schemaVersion` and may also use `tiers` and `planRestricted`
 - Model names ignore case and punctuation runs, so `claude-sonnet-5-5` matches `Claude Sonnet 5.5`.
   Provider cooldowns match the provider name or the T3 provider id (`claudeAgent`, `codex`,
   `antigravity`). `provider:codex` also covers a custom instance such as `codex-2`;
-  `provider:codex-2` covers only that instance.
+  `provider:codex-2`, `tier:codex-2:<pool>` and `model:codex-2:<id>` cover only that instance.
 - Keys missing from the file come from its `preset` (`tri-provider` when unset or `custom`). The
   hooks fall back to full defaults on an unknown `schemaVersion`.
 - Rendering drops banned and non-allowlisted ladder entries. If a ladder ends up empty, `init` fails
@@ -612,8 +612,8 @@ PreToolUse guards:
   contains a command substitution; is the current directory or `*`; has a `..` or `.git` segment; or
   is a dot-file glob such as `.*`.
 - **Delegate calls** (`delegate_task`), in order: [speed mode](#speed-mode-guard), provider/model
-  conflict, retired, user-banned, plan-restricted, availability, allowlist (a trailing `-YYYYMMDD`
-  suffix is ignored), then cooldown locks.
+  conflict, retired, user-banned, plan-restricted, availability, per-provider allowlist (a trailing
+  `-YYYYMMDD` suffix is ignored), then cooldown locks.
 
 Empty or unparsable hook input, and unreadable cooldown data, produce exit 0 (fail open). An invalid
 config value produces a warning and a default, so the allowlist is still enforced. The secret and

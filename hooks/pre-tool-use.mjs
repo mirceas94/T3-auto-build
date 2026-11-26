@@ -3,8 +3,8 @@ import path from 'node:path';
 import { isLocked, readCooldowns } from './_quota.mjs';
 import {
   AVAILABILITY_FILE, COOLDOWN_FILE, canonicalProvider, configDirOf, effectiveAllowlist, fastModeRequested, isBanned,
-  loadConfig, matchRetired, modelKeys, normalizeModel, payloadProblem, prop, readAvailability, readPayload, resolveTarget,
-  restrictedBy, str, warn,
+  isPlanRestricted, loadConfig, matchRetired, modelKeys, normalizeModel, payloadProblem, prop, readAvailability,
+  readPayload, resolveTarget, restrictedBy, str, warn,
 } from './_shared.mjs';
 
 // (?=\n?$) mirrors .NET's "$", which also matches before a trailing newline.
@@ -76,18 +76,8 @@ function cooldownBlock(configDir, models, providers, config) {
   return null;
 }
 
-/** "provider:model" restricts that hosting only; a bare model restricts every hosting. */
-function planRestricted(refs, provider, keys, config) {
-  return refs.some((ref) => {
-    const [, host, name] = ref.match(/^([^:]+):(.+)$/) ?? [];
-    const hosting = canonicalProvider(host);
-    if (hosting && hosting !== provider) return false;
-    return [...modelKeys(hosting ? name : ref, config)].some((key) => keys.includes(key));
-  });
-}
-
 /** Why one requested model is refused, or null. The order of the checks decides which reason is reported. */
-function modelBlock(model, { providers, config, availability, allowed, known }) {
+function modelBlock(model, { providers, config, availability, allowed, known, knownByProvider, allCanonical }) {
   const target = resolveTarget({ providers, model }, config);
   if (target.conflict) return `Blocked by allowlist hook: ${target.conflict}.`;
   const keys = [...modelKeys(model, config)];
@@ -97,16 +87,19 @@ function modelBlock(model, { providers, config, availability, allowed, known }) 
   if ([model, normalizeModel(model)].some((name) => isBanned(name, config.bannedModels))) {
     return `Blocked by allowlist hook: model '${model}' is banned.`;
   }
-  if (planRestricted(config.planRestrictedModels, target.provider, keys, config)) {
+  if (isPlanRestricted(config.planRestrictedModels, target.provider, model, config)) {
     return `Blocked by plan hook: model '${model}' is plan-restricted on the configured subscription.`;
   }
-  const restriction = keys.map((key) => restrictedBy(availability, target.provider, key)).find(Boolean);
+  const restriction = restrictedBy(availability, target.provider, model, Date.now(), config);
   if (restriction) {
     const until = Date.parse(restriction.until);
     return `Blocked by availability hook: model '${model}' is ${restriction.status} on ${target.provider}`
       + `${Number.isNaN(until) ? '' : ` until ${new Date(until).toISOString()}`}.`;
   }
-  if (!keys.some((key) => known.has(key))) {
+  const perProvider = config.schemaVersion === 2 || target.crossHosted
+    || providers.some((p) => canonicalProvider(p) !== null) || allCanonical;
+  const pool = perProvider && target.provider ? (knownByProvider.get(target.provider) ?? new Set()) : known;
+  if (!keys.some((key) => pool.has(key))) {
     return `Blocked by allowlist hook: model '${model}' is outside the ${allowed.length}-model allowlist.`;
   }
   return null;
@@ -146,11 +139,21 @@ function blockReason(payload) {
     }
     if (!models.length && !providers.length) return null;
     if (models.length) {
-      const allowed = effectiveAllowlist(config).flatMap(([, names]) => names);
+      const groups = effectiveAllowlist(config);
+      const allowed = groups.flatMap(([, names]) => names);
       const known = new Set(allowed.flatMap((name) => [...modelKeys(name)]));
+      const knownByProvider = new Map();
+      for (const [group, names] of groups) {
+        const provider = canonicalProvider(group);
+        if (!provider) continue;
+        const set = knownByProvider.get(provider) ?? new Set();
+        for (const name of names) for (const key of modelKeys(name)) set.add(key);
+        knownByProvider.set(provider, set);
+      }
+      const allCanonical = groups.length > 0 && groups.every(([group]) => canonicalProvider(group) !== null);
       const { data: availability } = readAvailability(path.join(configDir, AVAILABILITY_FILE));
       for (const model of models) {
-        const reason = modelBlock(model, { providers, config, availability, allowed, known });
+        const reason = modelBlock(model, { providers, config, availability, allowed, known, knownByProvider, allCanonical });
         if (reason) return reason;
       }
     }

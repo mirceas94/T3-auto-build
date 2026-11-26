@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { isLocked, parseRateLimit, prune, readCooldowns, summarize, writeCooldowns } from '../hooks/_quota.mjs';
-import { quotaCheck, quotaClear, quotaSet, quotaStatus } from '../lib/quota.mjs';
+import { countdown, quotaCheck, quotaClear, quotaSet, quotaStatus } from '../lib/quota.mjs';
 import { sandbox, json, write } from './helpers.mjs';
 
 const NOW = Date.UTC(2026, 10, 26, 12);
@@ -68,6 +68,9 @@ test('v2 cooldown keys distinguish model identity, hosting, provider aliases, an
 
   assert.equal(hit('model:antigravity:claude-sonnet-5-5', { model: 'claude-sonnet-5-5' }), null);
   assert.equal(hit('model:claude:claude-sonnet-5-5', { model: 'claude-sonnet-5-5' }), 'model:claude:claude-sonnet-5-5');
+  assert.equal(hit('model:claudeAgent:claude-sonnet-5-5', { model: 'claude-sonnet-5-5' }), 'model:claudeAgent:claude-sonnet-5-5');
+  assert.equal(hit('model:codex-2:gpt-6-luna', { provider: 'codex', model: 'gpt-6-luna' }), null);
+  assert.equal(hit('model:codex-2:gpt-6-luna', { provider: 'codex-2', model: 'gpt-6-luna' }), 'model:codex-2:gpt-6-luna');
   assert.equal(hit('model:claude-sonnet-5-5', { model: 'claude-sonnet-5-5' }), 'model:claude-sonnet-5-5');
   assert.equal(hit('model:claude-sonnet-5-5', { providers: ['antigravity'], model: 'claude-sonnet-5-5' }), 'model:claude-sonnet-5-5');
 
@@ -75,6 +78,12 @@ test('v2 cooldown keys distinguish model identity, hosting, provider aliases, an
   assert.equal(isLocked(legacy, { model: 'claude-opus-5-5', config }, NOW)?.key, 'tier:claude:heavy');
   assert.equal(isLocked(legacy, { model: 'claude-fable-5-2', config }, NOW)?.key, 'tier:claude:heavy');
   assert.equal(isLocked(lock('tier:codex:heavy'), { model: 'gpt-6-astra', config }, NOW)?.key, 'tier:codex:heavy');
+  assert.equal(hit('tier:claudeAgent:heavy', { model: 'claude-opus-5-5' }), 'tier:claudeAgent:heavy');
+  assert.equal(hit('tier:claudeAgent:heavy', { model: 'claude-fable-5-2' }), 'tier:claudeAgent:heavy');
+  assert.equal(hit('tier:claude:heavy', { providers: ['antigravity'], model: 'claude-opus-5-5' }), null);
+  assert.equal(hit('tier:codex-2:astra', { provider: 'codex', model: 'gpt-6-astra' }), null);
+  assert.equal(hit('tier:codex-2:astra', { provider: 'codex-2', model: 'gpt-6-astra' }), 'tier:codex-2:astra');
+  assert.equal(hit('tier:codex-2:astra', { provider: 'codex-2', model: 'gpt-6-luna' }), null);
   assert.ok(summarize(lock('tier:antigravity:third-party-claude'), NOW).join('\n').includes('third-party-claude'));
 });
 
@@ -108,6 +117,26 @@ test('rate limit parsing handles burst retry, 5h, weekly reset, and heavy-tier s
   assert.deepEqual(parseRateLimit('weekly limit', { now: NOW, resetDay: 'friday' }), {
     window: 'weekly', scope: 'provider', until: '2026-11-27T00:00:00.000Z',
   });
+  assert.deepEqual(parseRateLimit('Usage limit reached. Resets at 15:00 UTC', { now: Date.UTC(2026, 10, 26, 14, 0, 0) }), {
+    window: '5h', scope: 'provider', until: '2026-11-26T15:00:00.000Z',
+  });
+  assert.deepEqual(parseRateLimit('Resets at 3pm GMT', { now: Date.UTC(2026, 10, 26, 16, 0, 0) }), {
+    window: '5h', scope: 'provider', until: '2026-11-27T15:00:00.000Z',
+  });
+  assert.deepEqual(parseRateLimit('Try again at 15:30Z', { now: Date.UTC(2026, 10, 26, 14, 0, 0) }), {
+    window: '5h', scope: 'provider', until: '2026-11-26T15:30:00.000Z',
+  });
+  assert.deepEqual(parseRateLimit('429 error, resets at 25:99', { now: NOW }), {
+    window: 'burst', scope: 'model', until: after(10 * 60_000),
+  });
+});
+
+test('countdown handles NaN, zero, negative, and positive durations', () => {
+  assert.equal(countdown(NaN), 'unknown');
+  assert.equal(countdown(Infinity), 'unknown');
+  assert.equal(countdown(0), '0s');
+  assert.equal(countdown(-1000), '0s');
+  assert.equal(countdown(65_000), '1m 5s');
 });
 
 test('quota set/status/clear persist locks and status prunes expired entries', (t) => {

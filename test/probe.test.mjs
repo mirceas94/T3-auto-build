@@ -199,3 +199,35 @@ test('probe cooldown keys use v2 pools and lock exactly the refused hosting', as
   assert.ok(isLocked(hosted, { provider: 'claude', model: 'claude-sonnet-5-5', config }, now));
   assert.equal(isLocked(hosted, { provider: 'antigravity', model: 'claude-sonnet-5-5', config }, now), null);
 });
+
+test('syncModels passes caller now to writeCooldowns and keeps the longest lock per key in a single run', async (t) => {
+  const box = sandbox(t);
+  assert.equal(box.cli('init', '--yes').status, 0);
+  const configFile = box.path('auto-build.config.json');
+  const config = json(configFile);
+  config.allowlist = { claude: ['Claude Opus 5.5', 'Claude Sonnet 5.5'] };
+  config.tiers = { claude: { plan: 'max', sharing: 'heavy-tier-only', heavyModels: ['Claude Opus 5.5', 'Claude Sonnet 5.5'] } };
+  write(configFile, config);
+
+  const now = Date.UTC(2026, 0, 1, 12, 0, 0);
+  const responses = [
+    fail('5-hour limit reached, resets 2026-01-03T12:00:00Z'),
+    fail('5-hour limit reached, try again in 2h'),
+  ];
+  await syncModels(box.target, {
+    providers: ['claude'], yes: true, now,
+    runner: async () => responses.shift(),
+    log: () => {},
+  });
+  const stored = json(box.path('auto-build-cooldowns.json'))['tier:claude:heavy'];
+  assert.equal(stored.until, '2026-01-03T12:00:00.000Z');
+  assert.equal(stored.setAt, new Date(now).toISOString());
+  assert.equal(stored.recheckAfter, new Date(now + 6 * 3_600_000).toISOString());
+});
+
+test('probeModels rejects an unknown provider with CliError exitCode 2', async () => {
+  await assert.rejects(
+    probeModels({ config: { allowlist: { claude: ['Claude Opus 5.5'] } }, providers: ['nope'] }),
+    (error) => error.exitCode === 2 && /unknown provider/.test(error.message),
+  );
+});

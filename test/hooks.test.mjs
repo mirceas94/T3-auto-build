@@ -477,6 +477,7 @@ test('pre-compact renders restrictions and locks from the live files', (t) => {
   write(box.availability, {
     schemaVersion: 1, checkedAt: at(0), models: {
       'codex:gpt-6-luna': { status: 'unavailable' },
+      'antigravity:Claude Opus 5.5': { status: 'plan-restricted' },
       'claude:claude-opus-5-5': { status: 'plan-restricted', until: at(-1) },
       'codex:x\nforged': { status: 'unavailable' },
     },
@@ -484,7 +485,7 @@ test('pre-compact renders restrictions and locks from the live files', (t) => {
   const compact = () => box.hook('pre-compact', { cwd: box.dir });
   const { stdout } = compact();
   assert.match(stdout, /Plan-restricted: codex:gpt-6\.1-sol\n/);
-  assert.match(stdout, /Unavailable now: codex:gpt-6-luna \(unavailable\)\n/);
+  assert.match(stdout, /Unavailable now: codex:gpt-6-luna \(unavailable\), antigravity:Claude Opus 5\.5 \(plan-restricted\)\n/);
   assert.match(stdout, /antigravity:claude-opus-5-5 \[third-party-claude\]/);
   assert.match(stdout, /codex:gpt-6-astra \[astra\]/);
   assert.match(stdout, /Providers and tiers: provider:codex until/);

@@ -23,7 +23,7 @@ function unavailable(configDir) {
   const { data } = readAvailability(path.join(configDir, AVAILABILITY_FILE));
   return Object.keys(data?.models ?? {}).flatMap((ref) => {
     // The file's text goes into the session context, so only plain refs are echoed.
-    const [, host, model] = ref.match(/^([a-z]{1,20}):([\w.-]{1,60})$/i) ?? [];
+    const [, host, model] = ref.match(/^([a-z0-9-]{1,20}):([\w .:/()[\]-]{1,80})$/i) ?? [];
     const entry = model && restrictedBy(data, host, model);
     return entry ? [`${ref} (${entry.status})`] : [];
   });

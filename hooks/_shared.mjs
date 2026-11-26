@@ -285,18 +285,32 @@ export function readAvailability(file, now = Date.now()) {
 }
 
 /** The entry restricting provider:model, or null. Takes readAvailability's data (or its whole result). */
-export function restrictedBy(availability, provider, model, now = Date.now()) {
+export function restrictedBy(availability, provider, model, now = Date.now(), config) {
   const wanted = canonicalProvider(provider);
   if (!wanted || typeof model !== 'string') return null;
-  const keys = modelKeys(model);
+  const keys = modelKeys(model, config);
   const models = (availability?.data ?? availability)?.models;
   return Object.entries(isObject(models) ? models : {}).find(([ref, entry]) => {
     const [, host, name] = ref.match(/^([^:]+):(.+)$/) ?? [];
-    return name !== undefined && canonicalProvider(host) === wanted && [...modelKeys(name)].some((key) => keys.has(key))
+    return name !== undefined && canonicalProvider(host) === wanted && [...modelKeys(name, config)].some((key) => keys.has(key))
       && ['plan-restricted', 'unavailable'].includes(entry?.status)
       // An unreadable "until" keeps the restriction.
       && (entry.until === undefined || !(Date.parse(entry.until) <= now));
   })?.[1] ?? null;
+}
+
+/** "provider:model" restricts that hosting only; a bare model restricts every hosting. */
+export function isPlanRestricted(refs, provider, model, config) {
+  if (!Array.isArray(refs) || typeof model !== 'string') return false;
+  const target = canonicalProvider(provider);
+  const keys = modelKeys(model, config);
+  return refs.some((ref) => {
+    if (typeof ref !== 'string') return false;
+    const [, host, name] = ref.match(/^([^:]+):(.+)$/) ?? [];
+    const hosting = canonicalProvider(host);
+    if (hosting && hosting !== target) return false;
+    return [...modelKeys(hosting ? name : ref, config)].some((key) => keys.has(key));
+  });
 }
 
 /** PowerShell-like "$($value)" stringification. */

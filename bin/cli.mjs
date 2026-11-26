@@ -11,7 +11,7 @@ import { syncModels } from '../lib/probe.mjs';
 import { CATALOG, PROVIDERS } from '../lib/plans.mjs';
 import { confirmYes, initPrompts, parseChoice, parsePercent, parseTierSpec, TIER_FLAGS } from '../lib/prompt.mjs';
 import { QUOTA_WINDOWS, quotaCheck, quotaClear, quotaSet, quotaStatus } from '../lib/quota.mjs';
-import { CONFIG_FILE, readJson } from '../hooks/_shared.mjs';
+import { AVAILABILITY_FILE, CONFIG_FILE, readAvailability, readJson } from '../hooks/_shared.mjs';
 
 const USAGE = `Usage: t3-auto-build <command> [options]
 
@@ -131,8 +131,9 @@ async function sync(target, { yes = false, dryRun = false, force = false, provid
     const result = applyDrift(config, availability);
     for (const promotion of result.promoted) console.log(`promoted ${promotion.provider}:${promotion.from} -> ${promotion.provider}:${promotion.to}`);
     for (const unknown of result.unknown) console.log(`unknown family ${unknown.provider}:${unknown.model} (left disabled)`);
-    if (result.promoted.length) await syncConfig(target, result.config, { force, log: console.log });
-    else console.log('no known model drift to apply');
+    if (!result.promoted.length) console.log('no known model drift to apply');
+    else if (dryRun) console.log('nothing was written');
+    else await syncConfig(target, result.config, { force, log: console.log });
     return;
   }
   if (!yes && !dryRun && !process.stdin.isTTY) throw new CliError('no interactive terminal; re-run with --auto (or --dry-run); nothing was written', 2);
@@ -202,10 +203,11 @@ async function check(target, flags) {
 
 function availability(action, target, args, flags) {
   if (action === 'status') {
-    const data = readAvailabilityFile(target);
+    const { data, stale } = readAvailability(path.join(target, AVAILABILITY_FILE));
     if (!data) { console.log('availability cache missing or malformed'); return; }
     const age = Math.max(0, Date.now() - Date.parse(data.checkedAt));
-    console.log(`availability cache ${age <= (data.ttlMs ?? 43_200_000) ? 'fresh' : 'stale'} (${(age / 3_600_000).toFixed(1)}h old)`);
+    const ageText = Number.isFinite(age) ? ` (${(age / 3_600_000).toFixed(1)}h old)` : '';
+    console.log(`availability cache ${stale ? 'stale' : 'fresh'}${ageText}`);
     for (const [ref, entry] of Object.entries(data.models ?? {})) console.log(`${ref}: ${entry.status}${entry.reason ? ` (${entry.reason})` : ''}`);
     console.log(`drift: ${(data.discoveredNew ?? []).length} discovered, ${(data.missingConfigured ?? []).length} missing configured`);
   } else markAvailability({ configDir: target, ref: args[0], status: args[1], ttl: flags.ttl, reason: flags.reason });

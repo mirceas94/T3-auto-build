@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { resolveTiers, toConfig } from '../lib/plans.mjs';
+import { completeConfig, configProblem } from '../lib/install.mjs';
 import { matchRetired } from '../hooks/_shared.mjs';
 import { ROOT, json, read, sandbox, write } from './helpers.mjs';
 
@@ -38,11 +39,12 @@ test('provider lock cannot be bypassed with unknown, empty, or alternate provide
   assert.equal(box.cli('quota', 'set', 'codex').status, 0);
   for (const providerInstanceId of ['work', 'CODEX-2', '', ' ', 'claudeAgent', undefined]) {
     const extra = providerInstanceId === undefined ? {} : { providerInstanceId };
-    blocked(box, delegate('gpt-6-luna', extra), /lock|quota/i);
+    const expected = providerInstanceId === 'claudeAgent' ? /allowlist hook.*not hosted/i : /cooldown hook/i;
+    blocked(box, delegate('gpt-6-luna', extra), expected);
   }
-  blocked(box, delegate('gpt-6-luna', { providers: ['work', 'codex'] }), /conflict|lock|quota/i);
+  blocked(box, delegate('gpt-6-luna', { providers: ['work', 'codex'] }), /cooldown hook/i);
   for (const model of ['Gpt-6-Luna', 'gpt 6 luna', 'gpt-6-luna-20261101']) {
-    blocked(box, delegate(model, { providerInstanceId: 'work' }), /lock|quota|allowlist/i);
+    blocked(box, delegate(model, { providerInstanceId: 'work' }), /cooldown hook/i);
   }
 });
 
@@ -51,27 +53,40 @@ test('cross-hosted claude models require explicit Antigravity and its own pool l
   const box = installed(t, config);
   assert.equal(box.cli('quota', 'set', 'claude').status, 0);
   allowed(box, delegate('claude-sonnet-5-5', { provider: 'antigravity' }));
-  blocked(box, delegate('claude-sonnet-5-5'), /lock|quota|allowlist/i);
+  blocked(box, delegate('claude-sonnet-5-5'), /cooldown hook/i);
 
   const thirdParty = installed(t, config);
   assert.equal(thirdParty.cli('quota', 'set', 'antigravity', '--pool', 'third-party-claude').status, 0);
-  blocked(thirdParty, delegate('claude-sonnet-5-5', { provider: 'antigravity' }), /lock|quota/i);
+  blocked(thirdParty, delegate('claude-sonnet-5-5', { provider: 'antigravity' }), /cooldown hook/i);
   allowed(thirdParty, delegate('gemini-4-neon', { provider: 'antigravity' }));
 
   const plus = installed(t, v2Config({ claude: 'max', codex: 'plus', antigravity: 'plus' }));
   blocked(plus, delegate('claude-sonnet-5-5', { provider: 'antigravity' }), /allowlist|plan|model/i);
+
+  // Removing a cross-hosted model from Antigravity's allowlist must block it on Antigravity even if Claude still allows it.
+  const narrowed = v2Config({ claude: 'max', codex: 'plus', antigravity: 'pro' });
+  narrowed.allowlist.Antigravity = narrowed.allowlist.Antigravity.filter((m) => m !== 'claude-sonnet-5-5');
+  const narrowedBox = installed(t, narrowed);
+  blocked(narrowedBox, delegate('claude-sonnet-5-5', { provider: 'antigravity' }), /allowlist hook/i);
+  allowed(narrowedBox, delegate('claude-sonnet-5-5', { provider: 'claude' }));
+
+  // Bare claude-* delegation must be blocked when claude is 'none' even though antigravity cross-hosts it.
+  const agyOnly = installed(t, v2Config({ claude: 'none', codex: 'none', antigravity: 'pro' }));
+  blocked(agyOnly, delegate('claude-sonnet-5-5'), /allowlist hook/i);
+  allowed(agyOnly, delegate('claude-sonnet-5-5', { provider: 'antigravity' }));
 });
 
 test('scarce sub-pool and legacy heavy locks match only their documented pool models', (t) => {
   const box = installed(t);
   assert.equal(box.cli('quota', 'set', 'codex', '--pool', 'astra').status, 0);
-  blocked(box, delegate('gpt-6-astra', { provider: 'codex' }), /lock|quota/i);
+  blocked(box, delegate('gpt-6-astra', { provider: 'codex' }), /cooldown hook/i);
   allowed(box, delegate('gpt-6.1-sol', { provider: 'codex' }));
 
-  const legacy = installed(t);
+  const legacy = installed(t, v2Config({ claude: 'ultra', codex: 'pro-200', antigravity: 'pro' }));
   const cooldownFile = legacy.path('auto-build-cooldowns.json');
-  write(cooldownFile, { locks: { 'tier:claude:heavy': { until: new Date(Date.now() + 60_000).toISOString() } } });
-  blocked(legacy, delegate('claude-fable-5-2', { provider: 'claude' }), /lock|quota/i);
+  write(cooldownFile, { 'tier:claude:heavy': { until: new Date(Date.now() + 60_000).toISOString() } });
+  blocked(legacy, delegate('claude-fable-5-2', { provider: 'claude' }), /cooldown hook/i);
+  allowed(legacy, delegate('claude-opus-5-5', { provider: 'antigravity' }));
 });
 
 test('retired model patterns cannot be overridden by config and do not overmatch versions', (t) => {
@@ -155,6 +170,10 @@ test('upgrade creates byte-identical backup, is idempotent, and rejects malforme
   const failed = box.cli('upgrade', '--target', box.target);
   assert.notEqual(failed.status, 0, 'malformed config unexpectedly upgraded');
   assert.equal(read(configPath), malformed, 'malformed config was modified');
+});
+
+test('completeConfig does not mask ladders: null before configProblem validation', () => {
+  assert.match(configProblem(completeConfig({ ladders: null })) ?? '', /ladders/);
 });
 
 test('test paths use platform joins throughout', () => {

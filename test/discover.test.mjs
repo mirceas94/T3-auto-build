@@ -276,3 +276,47 @@ test('applyDrift replaces superseded models per hosting and changes nothing else
   // Applying the same data again finds nothing older left to replace.
   assert.deepEqual(applyDrift(next, availability).promoted, []);
 });
+
+test('checkModels staleness uses strict <, keeps live marks without until, and normalizes planRestrictedModels', async (t) => {
+  const configDir = dir(t);
+  const { probe, calls } = fakeProbe();
+  const cfg = config();
+  cfg.planRestrictedModels = ['Codex:GPT 6.1 Sol'];
+  writeAvailability(configDir, {
+    checkedAt: iso(-12 * HOUR),
+    ttlMs: 12 * HOUR,
+    models: {
+      'codex:gpt-6-luna': { status: 'unavailable', source: 'mark' },
+    },
+  });
+  // Exact boundary (age === ttlMs) must be stale, matching readAvailability().
+  const res = await checkModels({ configDir, config: cfg, which: none, now: NOW, probe });
+  assert.equal(res.stale, true);
+  assert.equal(calls.length, 1);
+  // A live mark without a parseable until must not be overwritten by a probe.
+  assert.equal(res.availability.models['codex:gpt-6-luna'].source, 'mark');
+  assert.equal(res.availability.models['codex:gpt-6-luna'].status, 'unavailable');
+  // Normalized planRestrictedModels is recognized in statuses and applyDrift.
+  assert.equal(res.statuses.find((s) => s.ref === 'codex:gpt-6.1-sol').status, 'plan-restricted');
+  const driftCfg = config();
+  driftCfg.planRestrictedModels = ['Codex:GPT 6.2 Sol'];
+  const drifted = applyDrift(driftCfg, {
+    discoveredNew: [{ provider: 'codex', model: 'gpt-6.2-sol', supersedes: 'gpt-6.1-sol' }],
+  });
+  assert.deepEqual(drifted.promoted, []);
+});
+
+test('restrictedBy and checkModels honor config.modelIds aliases', async (t) => {
+  const configDir = dir(t);
+  const { probe } = fakeProbe();
+  const cfg = config();
+  cfg.modelIds = { 'gpt-6-luna': 'luna-custom' };
+  const avail = writeAvailability(configDir, {
+    checkedAt: iso(0),
+    ttlMs: 12 * HOUR,
+    models: { 'codex:luna-custom': { status: 'unavailable', source: 'mark', until: iso(2 * HOUR) } },
+  });
+  assert.equal(restrictedBy(avail, 'codex', 'gpt-6-luna', NOW, cfg)?.status, 'unavailable');
+  const res = await checkModels({ configDir, config: cfg, which: none, now: NOW, probe });
+  assert.equal(res.statuses.find((s) => s.ref === 'codex:gpt-6-luna').status, 'unavailable');
+});

@@ -76,3 +76,27 @@ test('sync-models --apply promotes known drift, backs up config, re-renders, and
   assert.match(result.stdout, /promoted codex:gpt-6\.1-sol -> codex:gpt-6\.2-sol/);
   assert.match(result.stdout, /unknown family codex:gpt-7-mystery/);
 });
+
+test('sync-models --apply --dry-run does not modify config or SKILL.md, and availability status guards invalid checkedAt', (t) => {
+  const s = sandbox(t);
+  assert.equal(s.cli('init', '--yes', '--codex-tier', 'pro-100').status, 0);
+  const configPath = s.path('auto-build.config.json');
+  const skillPath = s.path('skills', 'auto-build', 'SKILL.md');
+  const beforeConfig = fs.readFileSync(configPath, 'utf8');
+  const beforeSkill = fs.readFileSync(skillPath, 'utf8');
+  write(s.path('auto-build-availability.json'), {
+    schemaVersion: 1, checkedAt: 'not-a-date', ttlMs: 0, binaries: {}, models: {},
+    discoveredNew: [{ provider: 'codex', model: 'gpt-6.2-sol', family: 'gpt-sol', version: '6.2', supersedes: 'gpt-6.1-sol' }],
+    missingConfigured: [],
+  });
+  const dry = s.cli('sync-models', '--apply', '--dry-run');
+  assert.equal(dry.status, 0, dry.stderr);
+  assert.match(dry.stdout, /nothing was written/);
+  assert.equal(fs.readFileSync(configPath, 'utf8'), beforeConfig);
+  assert.equal(fs.readFileSync(skillPath, 'utf8'), beforeSkill);
+
+  const status = s.cli('availability', 'status');
+  assert.equal(status.status, 0, status.stderr);
+  assert.match(status.stdout, /availability cache stale/);
+  assert.doesNotMatch(status.stdout, /NaNh/);
+});

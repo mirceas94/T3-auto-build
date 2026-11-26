@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  canonicalProvider, inferProvider, isObject, isStringList, modelKeys, normalizeName, parseJson,
+  canonicalProvider, exactProvider, inferProvider, isObject, isStringList, modelKeys, normalizeName, parseJson,
   resolveTarget, warn,
 } from './_shared.mjs';
 
@@ -147,9 +147,12 @@ function matches(key, scope, { provider, providers, model, config }) {
   if (scope === 'model') {
     const match = key.match(/^model:([^:]+):(.+)$/i);
     if (match) {
-      const wantedProvider = canonicalProvider(match[1]) ?? normalizeName(match[1]);
-      return targets.some((item) => item.provider
-        && normalizeName(item.provider) === wantedProvider && modelMatch(match[2]));
+      const exact = exactProvider(match[1]);
+      const wanted = exact ?? normalizeName(match[1]);
+      const hostMatch = exact
+        ? (item) => normalizeName(item.provider ?? '') === exact
+        : () => declarations.some((id) => normalizeName(id) === wanted);
+      return targets.some((item) => hostMatch(item) && modelMatch(match[2]));
     }
     return modelMatch(key.replace(/^model:/i, ''));
   }
@@ -157,14 +160,19 @@ function matches(key, scope, { provider, providers, model, config }) {
   const tier = key.match(/^tier:([^:]+):([a-z0-9-]+)$/i);
   if (!tier) return false;
   const [, providerKey, pool] = tier;
-  const wantedProvider = canonicalProvider(providerKey) ?? normalizeName(providerKey);
+  const exact = exactProvider(providerKey);
+  const wanted = exact ?? normalizeName(providerKey);
+  const hostMatch = exact
+    ? (item) => normalizeName(item.provider ?? '') === exact
+    : () => declarations.some((id) => normalizeName(id) === wanted);
   if (pool.toLowerCase() === 'heavy') {
-    const configured = config?.tiers?.[providerKey.toLowerCase()]?.heavyModels;
-    const legacyModels = isStringList(configured) ? configured : HEAVY_MODELS[providerKey.toLowerCase()] ?? [];
-    return legacyModels.some(modelMatch) || targets.some((item) => normalizeName(item.provider ?? '') === wantedProvider
-      && item.pool === SCARCE_POOL[providerKey.toLowerCase()]);
+    const family = exact ?? canonicalProvider(providerKey) ?? wanted;
+    const configured = config?.tiers?.[family]?.heavyModels;
+    const legacyModels = isStringList(configured) ? configured : HEAVY_MODELS[family] ?? [];
+    return targets.some((item) => hostMatch(item)
+      && (legacyModels.some(modelMatch) || item.pool === SCARCE_POOL[family]));
   }
-  return targets.some((item) => normalizeName(item.provider ?? '') === wantedProvider && item.pool === pool.toLowerCase());
+  return targets.some((item) => hostMatch(item) && item.pool === pool.toLowerCase());
 }
 
 /** The matching active lock that ends last, or null. A missing or unknown provider is inferred from the model. */
@@ -205,7 +213,7 @@ const WEEKDAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const DAY_NAME = '(?:mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\\b';
 const RESET_DAY = new RegExp(`\\bresets?\\s+(?:on\\s+)?(${DAY_NAME})`, 'i');
 const WEEKLY = /\bweek(?:ly)?\b/i;
-const CLOCK = /\b(?:resets?(?:\s+at)?|try again at)\s+(\d{1,2})(?::(\d{2})(?:\s*([ap])\.?m\b)?|\s*([ap])\.?m\b)/i;
+const CLOCK = /\b(?:resets?(?:\s+at)?|try again at)\s+(\d{1,2})(?::(\d{2})(?:\s*([ap])\.?m\b\.?)?|\s*([ap])\.?m\b\.?)(?:\s*(utc|gmt|z)\b)?/i;
 const FIVE_HOUR = /\b(?:5|five)[\s-]*(?:h|hrs?|hours?)\b|\b(?:session|usage) limit\b|\bin\s+\d+\s*(?:h(?![a-z])|hrs?\b|hours?\b)/i;
 const UNIT = '(?:days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)(?![a-z])';
 const DURATION = new RegExp(`\\b(?:in|after)\\s+((?:\\d+\\s*${UNIT}[\\s,]*(?:and\\s+)?)+)`, 'i');
@@ -219,18 +227,24 @@ function durationIn(text) {
   return parts.length ? parts.reduce((total, [, n, unit]) => total + n * UNIT_MS[unit.toLowerCase()], 0) : NaN;
 }
 
-/** Next local occurrence of a "resets 3pm" / "resets at 15:30" time. */
+/** Next occurrence of a "resets 3pm" / "resets at 15:30" (or "... UTC") time. */
 function clockIn(text, now) {
   const match = text.match(CLOCK);
   if (!match) return NaN;
   const half = (match[3] ?? match[4])?.toLowerCase();
+  const utc = Boolean(match[5]);
   let hour = Number(match[1]);
   const minute = Number(match[2] ?? 0);
   if (minute > 59 || (half ? hour < 1 || hour > 12 : hour > 23)) return NaN;
   if (half) hour = (hour % 12) + (half === 'p' ? 12 : 0);
   const date = new Date(now);
-  date.setHours(hour, minute, 0, 0);
-  if (date.getTime() <= now) date.setDate(date.getDate() + 1);
+  if (utc) {
+    date.setUTCHours(hour, minute, 0, 0);
+    if (date.getTime() <= now) date.setUTCDate(date.getUTCDate() + 1);
+  } else {
+    date.setHours(hour, minute, 0, 0);
+    if (date.getTime() <= now) date.setDate(date.getDate() + 1);
+  }
   return date.getTime();
 }
 
@@ -256,9 +270,10 @@ export function parseRateLimit(text, { now = Date.now(), sharing, resetDay, retr
   if (WEEKLY.test(message) || day) {
     return result('weekly', 'provider', isoIn(message), weekdayAt(day, at), weekdayAt(resetDay, at), at + 7 * DAY);
   }
-  if (FIVE_HOUR.test(message) || CLOCK.test(message)) {
+  const clock = clockIn(message, at);
+  if (FIVE_HOUR.test(message) || !Number.isNaN(clock)) {
     return result('5h', sharing === 'heavy-tier-only' ? 'tier' : 'provider',
-      isoIn(message), at + durationIn(message), clockIn(message, at), at + 300 * MINUTE);
+      isoIn(message), at + durationIn(message), clock, at + 300 * MINUTE);
   }
   return result('burst', 'model', at + Number(retryAfter ?? NaN) * 1000,
     at + Number(message.match(RETRY_AFTER)?.[1] ?? NaN) * 1000, at + durationIn(message), at + 10 * MINUTE);

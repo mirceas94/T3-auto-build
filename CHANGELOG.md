@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-11-26
+
+### Fixed
+
+- Quota and cooldown lock matching (`hooks/_quota.mjs`): normalized `tier:` provider alias lookups (`config.tiers`, `HEAVY_MODELS`, `SCARCE_POOL`), gated legacy heavy-model matching on provider match to prevent cross-host leaks, and isolated custom instance keys (`tier:codex-2:*`, `model:codex-2:*`) from canonical providers.
+- Rate-limit clock parsing (`hooks/_quota.mjs`): `parseRateLimit()` now honors explicit `UTC`/`GMT`/`Z` clock times via UTC date methods and only enters the `5h` branch when `clockIn()` parses a valid time.
+- Quota CLI (`lib/quota.mjs`): `quotaSet()` now uses `host` for `config.tiers` lookup (supporting custom `modelIds`) and falls back to `'heavy'` when `SCARCE_POOL[host]` is absent; `countdown()` returns `'unknown'` for non-finite values and `'0s'` for non-positive durations; `quotaClear()` fixes malformed stub scope for qualified models, matches `tier:` provider aliases via `exactProvider`, and handles display-name/cased qualified model keys.
+- Probe cooldowns (`lib/probe.mjs`): `syncModels()` now forwards `{ now }` to `writeCooldowns()`, preserves the longest `until` per cooldown key across probe results in the same run, and exits with code `2` on unknown providers.
+- Availability & restrictions (`hooks/_shared.mjs`, `lib/discover.mjs`, `bin/cli.mjs`): aligned staleness boundary to strict `<` with `ttlMs > 0` fallback, preserved live manual marks without a parseable `until` in `put()`, shared normalized `isPlanRestricted()`, and added optional `config` forwarding to `restrictedBy()` for `modelIds` aliases.
+- Doctor & install hardening (`lib/doctor.mjs`, `lib/install.mjs`): `doctor` skips `tierId === 'none'` warnings, guards `NaN` availability age, validates `isFile()` / `fileHash()` safely inside `attempt()`, checks `isObject()` for cooldown JSON, and guards `CONFIG_FILE`, `AVAILABILITY_FILE`, and `COOLDOWN_FILE` with `safePath()`; `completeConfig()` no longer masks `ladders: null` before validation.
+- CLI & hook guards (`bin/cli.mjs`, `hooks/pre-compact.mjs`, `hooks/pre-tool-use.mjs`): `sync-models --apply --dry-run` no longer writes config or `SKILL.md`; `pre-compact.mjs` renders availability marks whose model names contain spaces or instance hyphens while rejecting control characters; `pre-tool-use.mjs` enforces per-provider allowlist membership (blocking bare `claude-*` calls when native Claude has no allowlisted models).
+- Test suite: fixed false-positive cooldown test in `test/v2-edge.test.mjs` and expanded regression coverage to 224 passing tests.
+
 ## [2.0.2] - 2026-11-26
 
 ### Changed
@@ -115,6 +128,8 @@ See [Migrating from v1](README.md#migrating-from-v1).
 - Hardened the recursive `rm` guard, cooldown handling, the pre-compact state boundary and
   `sync-models --force`.
 
+[2.1.0]: https://github.com/mirceas94/t3-auto-build/compare/v2.0.2...v2.1.0
+[2.0.2]: https://github.com/mirceas94/t3-auto-build/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/mirceas94/t3-auto-build/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/mirceas94/t3-auto-build/compare/v1.0.1...v2.0.0
 [1.0.1]: https://github.com/mirceas94/t3-auto-build/compare/v1.0.0...v1.0.1
