@@ -51,6 +51,7 @@ init only:
 check-models only:
   --refresh                    ignore the probe cache TTL
   --probe-scarce               also probe scarce quota models
+  --recheck-locks              retest every active provider lock now
   --json                       print machine-readable results
 
 sync-models only:
@@ -82,11 +83,11 @@ Examples:
   Overflow to cross-hosted models requires an explicit provider, e.g. antigravity:claude-opus-5-5.`;
 
 const VALUE_FLAGS = ['target', 'preset', 'modules', 'compaction', 'tiers', 'providers', 'until', 'reason', 'parent', 'claude-tier', 'codex-tier', 'antigravity-tier', 'ttl', 'pool'];
-const SWITCHES = ['yes', 'force', 'help', 'version', 'probe', 'dry-run', 'all', 'auto', 'refresh', 'probe-scarce', 'apply', 'json', 'allow-usage-credits', 'allow-fast-modes', 'verified-org', ...QUOTA_WINDOWS];
+const SWITCHES = ['yes', 'force', 'help', 'version', 'probe', 'dry-run', 'all', 'auto', 'refresh', 'probe-scarce', 'recheck-locks', 'apply', 'json', 'allow-usage-credits', 'allow-fast-modes', 'verified-org', ...QUOTA_WINDOWS];
 const COMMAND_FLAGS = {
   init: ['preset', 'modules', 'compaction', 'tiers', 'probe', 'yes', 'force', ...Object.values(TIER_FLAGS).map((f) => f.slice(2)), 'parent', 'allow-usage-credits', 'allow-fast-modes', 'verified-org'],
   upgrade: ['yes'], doctor: [], uninstall: [],
-  'check-models': ['refresh', 'probe-scarce', 'json'],
+  'check-models': ['refresh', 'probe-scarce', 'recheck-locks', 'json'],
   'sync-models': ['dry-run', 'providers', 'yes', 'auto', 'force', 'refresh', 'probe-scarce', 'apply'],
   'availability mark': ['ttl', 'reason'], 'availability status': [],
   'quota set': [...QUOTA_WINDOWS, 'until', 'reason', 'pool'],
@@ -185,10 +186,16 @@ async function init(target, flags) {
 
 async function check(target, flags) {
   const config = rawConfig(target);
-  const result = await checkModels({ configDir: target, config, refresh: flags.refresh, probeScarce: flags['probe-scarce'] });
+  const result = await checkModels({
+    configDir: target, config, refresh: flags.refresh, probeScarce: flags['probe-scarce'], recheckLocks: flags['recheck-locks'],
+  });
   if (flags.json) console.log(JSON.stringify(result, null, 2));
   else {
     console.log(`availability ${result.stale ? 'stale' : 'fresh'}; probed ${result.probed.length}; skipped scarce ${result.skippedScarce.length}`);
+    for (const { ref, status } of result.statuses) console.log(`${ref} ${status}`);
+    for (const { key, provider, model, result: outcome } of result.rechecked) {
+      console.log(outcome === 'via-t3' ? `recheck-via-t3: ${provider} (${model})` : `rechecked ${key} with ${model}: ${outcome}`);
+    }
     for (const entry of result.availability.discoveredNew ?? []) console.log(`discovered ${entry.provider}:${entry.model}${entry.supersedes ? ` supersedes ${entry.supersedes}` : ' (unknown family)'}`);
   }
 }

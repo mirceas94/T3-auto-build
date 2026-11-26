@@ -27,10 +27,11 @@ test('init asks one tier per provider, defaulting to none without a binary', asy
 
 test('a flagged tier is not asked and tier warnings are shown', async (t) => {
   const box = sandbox(t);
-  const { answers, shown } = await ask(box.target, '\ngo\n\n\n\n\n', { claudeTier: 'pro' });
+  const { answers, shown } = await ask(box.target, '\ngo\n\n\n\n\n', { claudeTier: 'free' });
   assert.doesNotMatch(shown, /claude subscription tier/);
-  assert.match(shown, /warning: codex go: desktop-only/);
-  assert.deepEqual(answers.subscriptions, { claude: 'pro', codex: 'go', antigravity: 'none' });
+  assert.match(shown, /warning: claude free: Claude Code requires Pro/);
+  assert.doesNotMatch(shown, /warning: codex/);
+  assert.deepEqual(answers.subscriptions, { claude: 'free', codex: 'go', antigravity: 'none' });
 });
 
 test('all none asks the preset; a v1 config is kept on Enter', async (t) => {

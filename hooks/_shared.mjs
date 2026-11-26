@@ -91,6 +91,9 @@ export const PROVIDER_ALIASES = new Map([
   ['claudeagent', 'claude'], ['claude', 'claude'], ['codex', 'codex'], ['antigravity', 'antigravity'],
 ]);
 
+/** Like canonicalProvider without the prefix match: custom instances and model names are null. */
+export const exactProvider = (id) => PROVIDER_ALIASES.get(String(id).toLowerCase().replace(/[^a-z0-9]/g, '')) ?? null;
+
 /** 'claude' | 'codex' | 'antigravity' from a provider or instance id, else null. */
 export function canonicalProvider(id) {
   if (typeof id !== 'string') return null;

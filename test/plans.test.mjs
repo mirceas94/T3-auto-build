@@ -11,7 +11,7 @@ const TIER_IDS = {
   codex: ['none', 'free', 'go', 'plus', 'pro-100', 'pro-200', 'pro-500', 'business', 'api'],
   antigravity: ['none', 'free', 'plus', 'pro-trial', 'pro', 'ultra-5x', 'ultra-20x'],
 };
-const UNSUPPORTED = { claude: ['none', 'free'], codex: ['none', 'free', 'go'], antigravity: ['none'] };
+const UNSUPPORTED = { claude: ['none', 'free'], codex: ['none'], antigravity: ['none'] };
 const ROLES = ['triage', 'planner', 'builder', 'tester', 'auditor'];
 const allTiers = () => Object.entries(CATALOG).flatMap(([provider, tiers]) => Object.values(tiers).map((tier) => ({ provider, tier })));
 
@@ -95,7 +95,7 @@ test('CLI-less tiers yield no models, no builders and a warning', () => {
     }
   }
   assert.match(getTier('claude', 'free').warning, /Claude Code requires Pro or higher \(or api\)/);
-  assert.match(getTier('codex', 'go').warning, /desktop-only; Codex CLI unavailable/);
+  assert.match(getTier('codex', 'none').warning, /no Codex subscription selected/);
 });
 
 test('rosters per tier', () => {
@@ -138,7 +138,7 @@ test('unknown tiers and selections without a usable model throw', () => {
   assert.throws(() => getTier('mistral', 'pro'), /unknown provider "mistral"/);
   assert.throws(() => resolveTiers({ codex: 'gold' }), /unknown codex tier "gold"/);
   assert.throws(() => resolveTiers(), /no CLI-capable subscription/);
-  assert.throws(() => resolveTiers({ claude: 'free', codex: 'go' }), /no CLI-capable subscription/);
+  assert.throws(() => resolveTiers({ claude: 'free', codex: 'none' }), /no CLI-capable subscription/);
   assert.throws(() => resolveTiers({ claude: 'api' }), /no CLI-capable subscription/);
 });
 

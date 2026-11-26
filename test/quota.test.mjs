@@ -154,7 +154,9 @@ test('quota check injects commands, ignores hedged exhaustion, and records expli
   assert.deepEqual(Object.keys(result), ['provider:codex']);
   assert.equal(result['provider:codex'].window, 'weekly');
   assert.ok(logs.some((line) => line.includes('using recorded cooldowns')));
-  assert.deepEqual(json(box.path('auto-build-cooldowns.json'))['provider:codex'], result['provider:codex']);
+  const { setAt, recheckAfter, ...stored } = json(box.path('auto-build-cooldowns.json'))['provider:codex'];
+  assert.deepEqual(stored, result['provider:codex']);
+  assert.equal(Date.parse(recheckAfter) - Date.parse(setAt), 6 * 3_600_000);
 });
 
 test('quota check falls back gracefully for missing CLIs and unsupported providers', async (t) => {
