@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { sandbox, write } from './helpers.mjs';
 
@@ -83,7 +84,7 @@ test('session start prunes expired locks and reports active countdowns', (t) => 
 test('pre-compact preserves orchestrator state location and required fields', (t) => {
   const box = sandbox(t);
   assert.equal(box.cli('init', '--yes').status, 0);
-  const file = `${box.dir}\\.claude\\auto-build-state.json`;
+  const file = join(box.dir, '.claude', 'auto-build-state.json');
   write(file, { flags: ['--strict'], completedWaves: [1, 2], modifiedFiles: ['src/a.mjs'], remaining: ['wave 3'], blockers: ['lint'] });
   const result = box.hook('pre-compact', { cwd: box.dir });
   assert.equal(result.status, 0, result.stderr);
