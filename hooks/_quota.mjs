@@ -10,6 +10,15 @@ const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
 // A parsed reset time comes from message text, so it can never lock for longer than this.
 const MAX_LOCK = 14 * DAY;
+export const RECHECK_AFTER = 360 * MINUTE;
+
+/** A lock lasting more than RECHECK_AFTER past setAt gets a recheckAfter time; others are returned unchanged. */
+export function withRecheck(entry, now = Date.now()) {
+  if (!Number.isNaN(Date.parse(entry.recheckAfter))) return entry;
+  const setAt = Date.parse(entry.setAt) || now;
+  if (!(Date.parse(entry.until) - setAt > RECHECK_AFTER)) return entry;
+  return { ...entry, setAt: new Date(setAt).toISOString(), recheckAfter: new Date(setAt + RECHECK_AFTER).toISOString() };
+}
 
 const HEAVY_MODELS = { claude: ['Claude Opus 5.5'], codex: ['gpt-6-luna'], antigravity: ['Gemini 4 Carbon'] };
 export const SCARCE_POOL = { claude: 'fable', codex: 'astra', antigravity: 'third-party-claude' };
@@ -79,10 +88,11 @@ export function readCooldowns(file, onInvalid = (key) =>
  * Atomic replace; an empty map removes the file. Invalid entries already in the file are kept as they are,
  * unless data replaces their key or `remove` names it.
  */
-export function writeCooldowns(file, data, { remove = [] } = {}) {
+export function writeCooldowns(file, data, { remove = [], now = Date.now() } = {}) {
   const invalid = Object.entries(readRaw(file))
     .filter(([key, value]) => !Object.hasOwn(data, key) && !remove.includes(key) && !isValid(key, value));
-  const entries = { ...canonicalAll(data), ...Object.fromEntries(invalid) };
+  const stamped = Object.entries(canonicalAll(data)).map(([key, entry]) => [key, withRecheck(entry, now)]);
+  const entries = Object.fromEntries([...stamped, ...invalid]);
   if (Object.keys(entries).length === 0) {
     fs.rmSync(file, { force: true });
     return;

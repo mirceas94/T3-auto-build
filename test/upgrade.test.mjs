@@ -63,8 +63,8 @@ test('tiers without a CLI or without usage credits warn and add no models', (t) 
   const free = run(box.target, { claudeTier: 'free', codexTier: 'plus' });
   assert.match(free, /warning: claude free: Claude Code requires Pro/);
   const go = path.join(box.home, 'go');
-  assert.match(run(go, { claudeTier: 'pro', codexTier: 'go' }), /warning: codex go: desktop-only/);
-  assert.deepEqual(json(path.join(go, CONFIG)).allowlist.Codex, []);
+  assert.doesNotMatch(run(go, { claudeTier: 'pro', codexTier: 'go' }), /warning: codex/);
+  assert.deepEqual(json(path.join(go, CONFIG)).allowlist.Codex, ['gpt-6-luna', 'gpt-5.6-terra', 'gpt-5.6-luna']);
   const api = path.join(box.home, 'api');
   assert.match(run(api, { claudeTier: 'pro', codexTier: 'api' }), /--allow-usage-credits/);
   assert.deepEqual(json(path.join(api, CONFIG)).allowlist.Codex, []);
@@ -140,9 +140,9 @@ test('uninstall removes the availability cache and nothing outside the target', 
 });
 
 test('summaryTable has a row per provider, the parent and the warnings', () => {
-  const text = summaryTable(resolveTiers({ claude: 'max', codex: 'go' }));
+  const text = summaryTable(resolveTiers({ claude: 'max', codex: 'api' }));
   for (const provider of ['claude', 'codex', 'antigravity']) assert.match(text, new RegExp(`^${provider} +\\|`, 'm'));
   assert.match(text, /^parent: opus \(medium\)$/m);
-  assert.match(text, /^warning: codex go:/m);
+  assert.match(text, /^warning: codex api:/m);
   assert.doesNotMatch(text, /antigravity none:/);
 });

@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2026-11-26
+
+### Added
+
+- `check-models` prints one `provider:model status` line per configured model.
+- Lock rechecks: locks longer than 6 hours carry `setAt` and `recheckAfter`. Due provider locks are
+  probed (Claude, Codex) or reported as `recheck-via-t3` for a canary delegation. New
+  `check-models --recheck-locks`.
+
+### Changed
+
+- Codex `free` and `go` are CLI tiers with `gpt-6-luna`, `gpt-5.6-terra` and `gpt-5.6-luna`, one
+  parallel builder and no warning.
+
+### Fixed
+
+- `quota clear` accepts `provider:<provider>`.
+
 ## [2.0.0] - 2026-11-26
 
 ### Added
@@ -91,6 +109,7 @@ See [Migrating from v1](README.md#migrating-from-v1).
 - Hardened the recursive `rm` guard, cooldown handling, the pre-compact state boundary and
   `sync-models --force`.
 
+[2.0.1]: https://github.com/mirceas94/t3-auto-build/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/mirceas94/t3-auto-build/compare/v1.0.1...v2.0.0
 [1.0.1]: https://github.com/mirceas94/t3-auto-build/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/mirceas94/t3-auto-build/releases/tag/v1.0.0

@@ -84,8 +84,8 @@ v1 config. At least one provider needs a CLI-capable tier.
 | claude | `team-premium` | yes | `claude-haiku-5-5`, `claude-sonnet-5-5`, `claude-opus-5-5` | – | 2 | – |
 | claude | `api` | yes | `claude-haiku-5-5`, `claude-sonnet-5-5`, `claude-opus-5-5` | `claude-fable-5-2` | 3 | API usage is billed per token |
 | codex | `none` | no | – | – | 0 | no Codex subscription selected |
-| codex | `free` | no | – | – | 0 | desktop-only; Codex CLI unavailable |
-| codex | `go` | no | – | – | 0 | desktop-only; Codex CLI unavailable |
+| codex | `free` | yes | `gpt-6-luna`, `gpt-5.6-terra`, `gpt-5.6-luna` | – | 1 | – |
+| codex | `go` | yes | `gpt-6-luna`, `gpt-5.6-terra`, `gpt-5.6-luna` | – | 1 | – |
 | codex | `plus` | yes | `gpt-6-luna`, `gpt-6.1-terra` | – | 1 | – |
 | codex | `pro-100` | yes | `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol` | `gpt-6-astra` | 2 | – |
 | codex | `pro-200` | yes | `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol` | `gpt-6-astra` | 2 | – |
@@ -153,6 +153,22 @@ The skill runs `t3-auto-build check-models` at the start of every run. Results g
 - A live manual mark beats discovery and probe results. Its `--ttl` is one number plus `m`, `h` or
   `d`, above zero and at most `30d` (default `24h`).
 - Antigravity has no probe support.
+- After its summary line, `check-models` prints one `provider:model status` line per configured model:
+  `available` (nothing speaks against it), `rate-limited` (locked or limited), `plan-restricted`,
+  `unavailable` or `skipped-scarce`.
+
+### Lock rechecks
+
+A lock lasting more than 6 hours gets `setAt` and `recheckAfter` (6 hours later). Once a provider lock
+is past `recheckAfter`, or for every provider lock with `--recheck-locks`, `check-models` tests the
+cheapest configured standard model:
+
+- With a Claude or Codex CLI installed, it sends one probe. Success clears the lock; any other result
+  moves `recheckAfter` 6 hours ahead.
+- Otherwise (such as Antigravity) it prints `recheck-via-t3: <provider> (<model>)`. The skill then
+  clears the lock, sends a one-word canary `delegate_task`, and re-locks only on a rate limit.
+
+Model and pool locks are not rechecked.
 
 ```sh
 t3-auto-build availability mark antigravity:claude-opus-5-5 plan-restricted --ttl 24h --reason "not in plan"
@@ -263,7 +279,7 @@ resume later.
 ```text
 t3-auto-build init
 t3-auto-build upgrade [--yes]
-t3-auto-build check-models [--refresh] [--probe-scarce] [--json]
+t3-auto-build check-models [--refresh] [--probe-scarce] [--recheck-locks] [--json]
 t3-auto-build sync-models [--auto] [--refresh] [--probe-scarce] [--apply]
 t3-auto-build availability mark <provider:model> <available|plan-restricted|unavailable> [--ttl 24h] [--reason <text>]
 t3-auto-build availability status
@@ -307,6 +323,7 @@ t3-auto-build uninstall
 | `--force` | init, sync-models | Back up your changed files to `<file>.bak`, then overwrite. For `sync-models`, this covers a hand-edited `SKILL.md`. |
 | `--refresh` | check-models, sync-models | Ignore the probe cache TTL. `sync-models` without `--apply` always probes. |
 | `--probe-scarce` | check-models, sync-models | Also probe scarce-pool models. |
+| `--recheck-locks` | check-models | Recheck every active provider lock now. |
 | `--json` | check-models | Machine-readable result. |
 | `--auto` | sync-models | Write without confirmation, like `--yes`. |
 | `--apply` | sync-models | Promote newer versions from recorded drift. |
@@ -454,7 +471,7 @@ t3-auto-build quota check [provider]
   pool.
 - Reset times parsed from rate-limit messages are capped at 14 days. A manual `--until` is not capped.
 - `status` drops expired locks and prints the rest.
-- `clear <provider>` removes its provider and pool locks, not its model locks. `clear <model>`
+- `clear <provider>` (or `clear provider:<provider>`) removes its provider and pool locks, not its model locks. `clear <model>`
   removes that model's lock. `--all` deletes the file, even a corrupt one.
 - `check` runs `claude auth status` and `codex login status` (Antigravity has no status command). It
   reports login state only, unless the output explicitly says usage is exhausted; only then does it
@@ -487,7 +504,7 @@ Legacy `tier:<p>:heavy` keys are still read, and `quota check` or a probe may st
 ```
 
 `scope` is `model`, `provider` or `tier`. `window` is `burst`, `5h`, `weekly` or `custom`. Legacy
-`until_utc` is read. A key without a prefix needs a `scope` field, or it locks nothing. A malformed
+`until_utc` is read. Long locks also carry `setAt` and `recheckAfter` (see [lock rechecks](#lock-rechecks)). A key without a prefix needs a `scope` field, or it locks nothing. A malformed
 entry (such as one without a valid time) is skipped with a warning and kept in the file until it is
 overwritten or cleared (`quota clear <name>` or `--all`). A file that is not a JSON object is
 unreadable: hooks warn and ignore it. A write that leaves no entries removes the file.
