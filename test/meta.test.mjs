@@ -33,7 +33,7 @@ test('package metadata is complete', () => {
   assert.ok(pkg.homepage);
   assert.ok(pkg.bugs?.url);
   assert.ok(pkg.keywords?.length);
-  assert.equal(pkg.version, '2.0.1');
+  assert.equal(pkg.version, '2.0.2');
   assert.equal(pkg.engines.node, '>=18.18.0');
   assert.match(pkg.description, /subscription.*quota.*availability/i);
   for (const keyword of ['subscription', 'quota', 'availability', 'cross-provider']) assert.ok(pkg.keywords.includes(keyword), keyword);

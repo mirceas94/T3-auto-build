@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.2] - 2026-11-26
+
+### Changed
+
+- Document starting-model orchestrator behavior, task-based starting-model recommendations,
+  hook guard scope, and same-thread follow-up rules in README and the skill template.
 ## [2.0.1] - 2026-11-26
 
 ### Added
