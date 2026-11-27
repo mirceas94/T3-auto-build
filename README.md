@@ -30,25 +30,12 @@ Upgrading from 1.x? Read [Migrating from v1](#migrating-from-v1) and the [change
 
 ## Table of Contents
 
-- [Quick Start](#quick-start)
-- [Subscription tiers](#subscription-tiers)
-- [Availability checks](#availability-checks)
-- [Model bans](#model-bans)
-- [Speed-mode guard](#speed-mode-guard)
-- [auto-build workflow](#auto-build-workflow)
-- [CLI](#cli)
-- [Legacy presets](#legacy-presets)
-- [Migrating from v1](#migrating-from-v1)
-- [sync-models](#sync-models)
-- [Quota](#quota)
-- [Configuration](#configuration)
-- [What `init` touches](#what-init-touches)
-- [Hooks](#hooks)
-- [Security and privacy](#security-and-privacy)
-- [Troubleshooting & Common Gotchas](#troubleshooting--common-gotchas)
-- [Optional tools](#optional-tools)
-- [Development](#development)
-- [License](#license)
+| Area | Sections |
+|---|---|
+| **Getting Started** | [Quick Start](#quick-start) · [Update an existing install](#update-an-existing-install) · [Upgrade & inspection](#upgrade--read-only-inspection) · [Migrating from v1](#migrating-from-v1) |
+| **Models & Routing** | [Subscription tiers](#subscription-tiers) · [Parent model](#parent-model) · [Cross-hosted overflow](#cross-hosted-overflow) · [Availability checks](#availability-checks) · [Lock rechecks](#lock-rechecks) · [Model drift](#model-drift-safe-by-default) · [Adopting newly released models](#adopting-newly-released-models) · [Model bans](#model-bans) · [Speed-mode guard](#speed-mode-guard) · [Legacy presets](#legacy-presets) |
+| **Workflow & CLI** | [auto-build workflow](#auto-build-workflow) · [Starting model](#starting-model) · [CLI](#cli) · [Modules](#modules) · [sync-models](#sync-models) · [Quota](#quota) · [Cooldown file](#cooldown-file) |
+| **Config, Hooks & Ops** | [Configuration](#configuration) · [What `init` touches](#what-init-touches) · [Hooks](#hooks) · [Known limits](#known-limits) · [Security and privacy](#security-and-privacy) · [Troubleshooting](#troubleshooting--common-gotchas) · [Optional tools](#optional-tools) · [Development](#development) · [License](#license) |
 
 ## Quick Start
 
