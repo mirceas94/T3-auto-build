@@ -25,7 +25,7 @@ test('release CLI flags and usage errors', (t) => {
 });
 
 test('package identity, dependencies, and packed file exclusions', () => {
-  assert.equal(pkg.version, '2.2.0');
+  assert.equal(pkg.version, '2.3.0');
   for (const value of [pkg.repository.url, pkg.homepage, pkg.bugs.url]) assert.match(value, /github\.com\/mirceas94\/T3-auto-build/);
   for (const k of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies', 'bundledDependencies']) assert.ok(!pkg[k] || (Array.isArray(pkg[k]) ? pkg[k].length === 0 : Object.keys(pkg[k]).length === 0), `${k} must be empty`);
   for (const f of pkg.files) {
@@ -111,6 +111,21 @@ test('CI, Dependabot, issue template, and README release links are valid', () =>
   for (const [, sha, version] of ci.matchAll(/uses:\s*[^@\s]+@([\da-f]{40})\s+#\s*(v\d+\.\d+\.\d+)/gi)) { assert.match(sha, /^[\da-f]{40}$/i); assert.match(version, /^v/); }
   assert.ok([...ci.matchAll(/uses:/g)].length > 0);
   assert.match(ci, /persist-credentials:\s*false/); for (const os of ['ubuntu', 'windows', 'macos']) assert.ok(ci.includes(os)); for (const n of ['18', '20', '22']) assert.ok(ci.includes(n));
+  const publish = read(path.join(ROOT, '.github/workflows/publish.yml')).replace(/\r\n/g, '\n');
+  const uses = publish.match(/^.*\buses:.*$/gm) ?? [];
+  assert.ok(uses.length >= 2);
+  for (const line of uses) assert.match(line, /uses:\s*[^@\s]+@[\da-f]{40}\s+#\s*v\d+\.\d+\.\d+\s*$/);
+  assert.equal(publish.match(/^permissions:[ \t]*\n((?:[ \t]+\S.*\n)+)/m)?.[1].trim(), 'contents: read');
+  assert.match(publish.slice(publish.indexOf('\njobs:')), /^ {4}permissions:\n(?: {6}.*\n)*? {6}id-token:\s*write/m);
+  assert.match(publish, /persist-credentials:\s*false/);
+  // A run: value plus every following line indented deeper than the key, or blank.
+  const runs = [...publish.replace(/^([ \t]*)- /gm, '$1  ').matchAll(/^([ \t]*)run:.*(?:\n(?:\1[ \t]+.*|[ \t]*(?=\n)))*/gm)].map(([block]) => block);
+  assert.equal(runs.length, publish.match(/\brun:/g).length);
+  assert.ok(runs.some((block) => block.includes('ls-remote')), 'run block bodies are captured');
+  for (const block of runs) assert.ok(!block.includes('${{'), block);
+  assert.match(publish, /if:\s*github\.event_name\s*==\s*'release'\s*\|\|\s*github\.ref\s*==\s*'refs\/heads\/main'/);
+  assert.doesNotMatch(publish, /^\s+GITHUB_\w+\s*:/m);
+  assert.match(publish, /npm publish --provenance/);
   const dep = read(path.join(ROOT, '.github/dependabot.yml'));
   assert.match(dep, /package-ecosystem:\s*["']?github-actions/); assert.match(dep, /schedule:[\s\S]*?interval:\s*weekly/); assert.match(dep, /prefix:\s*["']?chore\(ci\)["']?/); assert.match(dep, /open-pull-requests-limit:/);
   assert.match(read(path.join(ROOT, '.github/ISSUE_TEMPLATE/config.yml')), /blank_issues_enabled:\s*false/);

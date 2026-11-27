@@ -47,6 +47,7 @@ ONLY these {{modelCount}} models may ever be used (further narrowed if a `--*-on
   - `Architecture Plan` (Step 2): at most 25 lines (file list, edge cases, test targets only).
   - `Blind Edge-Case Tests` (Step 4): test code + 5-line summary max.
   - `Code Audit` (Step 5.2): at most 15 lines (`VERDICT: APPROVED` or `VERDICT: REJECTED` + findings tagged `BLOCKER` or `NIT`; zero praise or vague style chatter).
+  - All sub-agents: no greetings, prompt restating, recaps, or closing offers.
 
 - **NO EXTRA ADVISOR CALLS:** Do NOT call any built-in `Advisor` tool between or after pipeline steps—rely solely on `delegate_task` sub-agents defined in this skill.
 - **CONTEXT:** Auto-compaction is configured at {{compactionThreshold}}% context use; keep `REPO_BRIEF` and pipeline state compact.
@@ -128,6 +129,7 @@ Check if `.claude/repo-profile.md` exists in the repo:
 - **`L0`:** One builder, first available **Tier 1 (`low`)**.
 - **`L1`:** One builder from the Work-Shape **Builder Ladder** (`low` if `--budget`, otherwise `medium` unless ladder specifies explicit fallback effort).
 - **`L2` / `L3`:** Split the plan into file-disjoint waves: (1) foundations/hooks -> (2) core logic/CLI -> (3) tests/docs. Dispatch each wave's builders in parallel from the Work-Shape **Builder Ladder** (`L2`: effort as `L1`; `L3`: `medium` if `--budget`, otherwise `high`); no file has two owners in one wave. Run at most {{maxParallelBuilders}} builders in parallel; queue the rest. **Shift Left:** after each wave, run Step 3.5, its exit checks, and syntax/typecheck, and fix failures before starting the next wave (with `--no-tests`, skip test suites only).
+- **Builder Rules (every builder and fix-round prompt):** reuse existing code and the standard library before adding new code; no speculative abstractions or single-use wrappers; list any assumptions in the summary instead of guessing silently. If Context7 MCP tools are available, verify third-party library APIs with them.
 - Record `IMPLEMENTER_PROVIDER` (every provider that built) and have each builder include a 1-line `COMMIT_MSG` (`feat|fix|refactor(scope): concise summary`) in its summary so `--commit` needs no extra model call.
 
 ### Step 3.5: Scope-Creep & Diff Guard
@@ -166,5 +168,6 @@ If tests/lint failed OR any auditor reported a `BLOCKER` (and fix rounds < 2; `N
   - **Test / Lint Results:** Exact pass/fail summary (or `Skipped via --no-tests`)
   - **Audit Verdict:** `APPROVED`, `Skipped via --no-audit`, or remaining blockers after 2 fix rounds (list `NIT`s briefly)
   - **Model, Effort & Failover Trace:** Compact table listing every step, provider, model, dispatched effort, lockouts applied/respected, and any automatic quota failovers (confirming zero banned models were used)
+  - **Not checked:** One line naming what this run did not verify, including builder assumptions
 
 - **EXECUTED MODEL ECHO:** Require every delegate_task sub-agent to start its response with `Model used: <model>` on line 1 so the orchestrator can confirm the exact model that ran. Log the effort you dispatched; never ask a sub-agent to self-report effort.

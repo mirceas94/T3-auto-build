@@ -14,6 +14,9 @@
 - Never pipe large logs to stdout without `| Select-Object -Last 40` (PowerShell) or `| tail -n 40` (bash) when debugging noisy builds.
 
 ## Editing & Diff Discipline
+- State assumptions and tradeoffs before coding; ask only when the ambiguity changes the result.
+- Reuse existing code, the standard library, or installed dependencies before adding new code.
+- Simplest design that works: no speculative abstractions, options, or single-use wrappers.
 - Keep diffs minimal and scoped strictly to the requested change. Do not reformat unrelated lines.
 - Use `git diff -U5` when reviewing changes.
 - Respect `.gitignore` and never read or edit `.env`, credentials, keys, or secrets.

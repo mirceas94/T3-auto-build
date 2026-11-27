@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-11-27
+
+### Added
+
+- Skill template (`skills/auto-build/SKILL.md.tmpl`): builder rules (reuse existing code and the standard library, no speculative abstractions, list assumptions), terse sub-agent replies, a `Not checked:` line in the final report, and optional Context7 verification of third-party library APIs.
+- Core rules (`core/CLAUDE.md`): state assumptions and tradeoffs, reuse before adding code, simplest design.
+- Installed version: `init` and `upgrade` record the package version in the manifest, and `doctor` prints it (warning when it differs from the running CLI).
+- Documentation (`README.md`): Context7 note under Optional tools; how to update an existing install; CLI examples updated to `2.3.0`.
+
 ## [2.2.0] - 2026-11-27
 
 ### Added
@@ -152,6 +161,7 @@ See [Migrating from v1](README.md#migrating-from-v1).
 - Hardened the recursive `rm` guard, cooldown handling, the pre-compact state boundary and
   `sync-models --force`.
 
+[2.3.0]: https://github.com/mirceas94/T3-auto-build/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/mirceas94/T3-auto-build/compare/v2.1.2...v2.2.0
 [2.1.2]: https://github.com/mirceas94/T3-auto-build/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/mirceas94/T3-auto-build/compare/v2.1.0...v2.1.1
