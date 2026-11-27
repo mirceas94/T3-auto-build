@@ -1,8 +1,21 @@
 name: Feature request
-description: Suggest an improvement.
+description: Suggest a new capability or workflow improvement.
 title: "feat: "
 labels: ["enhancement"]
 body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - CLI & installer
+        - Subscription tiers & model routing
+        - Quota, cooldowns & availability
+        - Hooks & guardrails
+        - "$auto-build skill workflow"
+        - Other
+    validations:
+      required: true
   - type: textarea
     id: problem
     attributes:
@@ -14,7 +27,7 @@ body:
     id: proposal
     attributes:
       label: Proposed solution
-      description: Note that this project has no dependencies and supports Node 18 or newer.
+      description: Note that this project has zero dependencies and supports Node 18.18 or newer.
     validations:
       required: true
   - type: textarea

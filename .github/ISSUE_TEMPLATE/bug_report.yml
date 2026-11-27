@@ -14,7 +14,7 @@ body:
     attributes:
       label: t3-auto-build version
       description: Output of `t3-auto-build --version` (from a clone, `node bin/cli.mjs --version`). If your version lacks the flag, copy `version` from `package.json`.
-      placeholder: "2.0.0"
+      placeholder: "2.3.0"
     validations:
       required: true
   - type: dropdown

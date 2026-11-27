@@ -1,0 +1,61 @@
+name: Model or subscription tier update
+description: Request adding a newly released model, retiring an old model, or updating a provider subscription tier.
+title: "catalog: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form to request updates to the built-in model catalog (`lib/plans.mjs`) or retired-model list (`hooks/_shared.mjs`).
+  - type: dropdown
+    id: change-type
+    attributes:
+      label: Change type
+      options:
+        - Add newly released model
+        - Retire or deprecate model
+        - Add or update subscription tier
+        - Update scarce pool / cross-hosted overflow
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider
+      options:
+        - Claude
+        - Codex
+        - Antigravity
+        - Multiple / Other
+    validations:
+      required: true
+  - type: input
+    id: model-or-tier
+    attributes:
+      label: Model ID(s) or tier name(s)
+      description: Exact CLI model IDs (e.g. `claude-opus-5-6`, `gpt-6.2-sol`) or subscription tier names.
+      placeholder: "claude-opus-5-6, claude-sonnet-5-6"
+    validations:
+      required: true
+  - type: dropdown
+    id: pool
+    attributes:
+      label: Quota pool
+      description: Should this model be in the standard pool or scarce overflow?
+      options:
+        - Standard pool
+        - Scarce overflow pool
+        - Not applicable / Not sure
+    validations:
+      required: true
+  - type: input
+    id: source-link
+    attributes:
+      label: Official announcement or docs URL
+      description: Link to provider release notes, model docs, or pricing page.
+      placeholder: "https://..."
+  - type: textarea
+    id: details
+    attributes:
+      label: Additional details
+      description: Mention which subscription tiers include the model, CLI support, parallel limits, or whether it supersedes an existing model family.

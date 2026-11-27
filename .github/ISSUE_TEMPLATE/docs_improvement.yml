@@ -1,0 +1,29 @@
+name: Documentation improvement
+description: Report unclear, outdated, or missing documentation in README, CLI help, or skill instructions.
+title: "docs: "
+labels: ["documentation"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Documentation area
+      options:
+        - README.md
+        - CLI --help / command output
+        - "$auto-build skill (SKILL.md)"
+        - SECURITY.md / CONTRIBUTING.md
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: What is unclear, outdated, or missing?
+      description: Link the section or quote the text that caused confusion.
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested improvement
+      description: Optional — share clearer wording, a missing example, or the exact command you expected to find.

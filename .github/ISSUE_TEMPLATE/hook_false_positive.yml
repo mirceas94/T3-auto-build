@@ -1,0 +1,66 @@
+name: Hook guard false positive
+description: Report a safe command, file edit, or delegate_task call that a hook unexpectedly blocked.
+title: "guard: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report security vulnerabilities here — use the private security advisory link instead.
+
+        Redact tokens, keys, email addresses, and personal paths before submitting.
+  - type: dropdown
+    id: guard
+    attributes:
+      label: Affected hook / guard
+      options:
+        - Secret-file guard (Edit / Write / MultiEdit)
+        - Git destructive guard (Bash)
+        - Recursive rm guard (Bash)
+        - Delegate allowlist / ban / retired guard
+        - Speed-mode guard
+        - Quota / cooldown / availability guard
+        - PostToolUse formatter
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: t3-auto-build version
+      description: Output of `t3-auto-build --version`.
+      placeholder: "2.3.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: Exact command, path, or delegate_task payload
+      description: The exact shell command, file path, or sanitized JSON payload that triggered the block.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Hook error message & expected behavior
+      description: Paste the exact stderr message from the hook and explain why this call should be allowed.
+    validations:
+      required: true
+  - type: checkboxes
+    id: redacted
+    attributes:
+      label: Redaction
+      options:
+        - label: I removed tokens, keys, and personal paths from this report.
+          required: true
