@@ -109,7 +109,7 @@ test('syncModels on a v2 config probes only the tier allowlist and never lifts t
   const configFile = box.path('auto-build.config.json');
   const before = json(configFile);
   assert.equal(before.schemaVersion, 2);
-  before.planRestrictedModels = ['codex:gpt-6.1-sol'];
+  before.planRestrictedModels = ['codex:gpt-6-astra'];
   write(configFile, before);
   const probed = [];
   await syncModels(box.target, {
@@ -120,11 +120,11 @@ test('syncModels on a v2 config probes only the tier allowlist and never lifts t
     },
   });
   const saved = json(configFile);
-  assert.ok(!probed.some((line) => /gpt-6\.1-sol|gpt-6-astra|fable/i.test(line)), probed.join('\n'));
+  assert.ok(!probed.some((line) => /astra|fable/i.test(line)), probed.join('\n'));
   const listed = Object.values(saved.allowlist).flat().map((m) => m.toLowerCase());
-  assert.ok(!listed.some((m) => /sol|astra|fable|gemini/.test(m)), listed.join(', '));
+  assert.ok(!listed.some((m) => /astra|fable|gemini/.test(m)), listed.join(', '));
   assert.ok(!listed.includes('gpt-6.1-terra'));
-  assert.ok(saved.planRestrictedModels.includes('codex:gpt-6.1-sol'));
+  assert.ok(saved.planRestrictedModels.includes('codex:gpt-6-astra'));
   assert.ok(saved.planRestrictedModels.includes('codex:gpt-6.1-terra'));
   assert.equal(saved.planRestricted, undefined);
 });

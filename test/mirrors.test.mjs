@@ -49,12 +49,12 @@ test('init mirrors SKILL.md to discovered provider roots, sync-models updates th
     ttlMs: 43_200_000,
     binaries: {},
     models: {},
-    discoveredNew: [{ provider: 'codex', model: 'gpt-6.2-sol', family: 'gpt-sol', version: '6.2', supersedes: 'gpt-6.1-sol' }],
+    discoveredNew: [{ provider: 'codex', model: 'gpt-6.3-sol', family: 'gpt-sol', version: '6.3', supersedes: 'gpt-6.2-sol' }],
     missingConfigured: [],
   });
   const synced = box.cli('sync-models', '--apply');
   assert.equal(synced.status, 0, synced.stderr);
-  assert.match(read(codexMirror), /gpt-6\.2-sol/);
+  assert.match(read(codexMirror), /gpt-6\.3-sol/);
   assert.equal(read(codexMirror), read(primary));
   assert.equal(read(agyMirror), read(primary));
 

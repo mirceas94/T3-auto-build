@@ -42,7 +42,7 @@ test('tiers derive sharing mode and heavy model defaults', () => {
   assert.equal(tiers.antigravity.sharing, 'heavy-tier-only');
   assert.equal(tiers.codex.resetDay, 'monday');
   assert.deepEqual(tiers.claude.heavyModels, ['claude-fable-5-2']);
-  assert.deepEqual(tiers.codex.heavyModels, ['gpt-6-astra']);
+  assert.deepEqual(tiers.codex.heavyModels, ['gpt-6-astra', 'gpt-6.2-astra']);
   assert.deepEqual(tiers.antigravity.heavyModels, []);
 });
 

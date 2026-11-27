@@ -73,7 +73,7 @@ test('tiers without a CLI or without usage credits warn and add no models', (t) 
 test('unusable tier selections are CliErrors that write nothing', (t) => {
   const box = sandbox(t);
   for (const options of [
-    { claudeTier: 'max', parent: 'fable' }, { claudeTier: 'nope' }, { claudeTier: 'free' }, { parent: 'opus' },
+    { claudeTier: 'pro', parent: 'fable' }, { claudeTier: 'nope' }, { claudeTier: 'free' }, { parent: 'opus' },
   ]) {
     assert.throws(() => run(box.target, options), CliError, JSON.stringify(options));
   }

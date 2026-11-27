@@ -52,8 +52,8 @@ Upgrading from 1.x? Read [Migrating from v1](#migrating-from-v1) and the [change
 
    ```text
    provider    | tier | CLI | models (standard)                                    | scarce overflow                    | max parallel
-   claude      | max  | yes | claude-haiku-5-5, claude-sonnet-5-5, claude-opus-5-5 | -                                  | 2
-   codex       | plus | yes | gpt-6-luna, gpt-6.1-terra                            | -                                  | 1
+   claude      | max  | yes | claude-haiku-5-5, claude-sonnet-5-5, claude-opus-5-5 | claude-fable-5-2                   | 2
+   codex       | plus | yes | gpt-6-luna, gpt-6.1-terra, gpt-6.1-sol, gpt-6.2-sol  | -                                  | 1
    antigravity | pro  | yes | gemini-4-hydrogen, gemini-4-neon, gemini-4-carbon    | claude-sonnet-5-5, claude-opus-5-5 | 2
    parent: opus (medium)
    max parallel builders: 5
@@ -141,7 +141,7 @@ tier.
 | claude | `none` | no | – | – | 0 | no Claude subscription selected |
 | claude | `free` | no | – | – | 0 | Claude Code requires Pro or higher (or api) |
 | claude | `pro` | yes | `claude-haiku-5-5`, `claude-sonnet-5-5`, `claude-opus-5-5` | – | 1 | – |
-| claude | `max` | yes | `claude-haiku-5-5`, `claude-sonnet-5-5`, `claude-opus-5-5` | – | 2 | – |
+| claude | `max` | yes | `claude-haiku-5-5`, `claude-sonnet-5-5`, `claude-opus-5-5` | `claude-fable-5-2` | 2 | – |
 | claude | `ultra` | yes | `claude-haiku-5-5`, `claude-sonnet-5-5`, `claude-opus-5-5` | `claude-fable-5-2` | 3 | – |
 | claude | `team-standard` | yes | `claude-haiku-5-5`, `claude-sonnet-5-5`, `claude-opus-5-5` | – | 1 | – |
 | claude | `team-premium` | yes | `claude-haiku-5-5`, `claude-sonnet-5-5`, `claude-opus-5-5` | – | 2 | – |
@@ -149,12 +149,12 @@ tier.
 | codex | `none` | no | – | – | 0 | no Codex subscription selected |
 | codex | `free` | yes | `gpt-6-luna`, `gpt-5.6-terra`, `gpt-5.6-luna` | – | 1 | – |
 | codex | `go` | yes | `gpt-6-luna`, `gpt-5.6-terra`, `gpt-5.6-luna` | – | 1 | – |
-| codex | `plus` | yes | `gpt-6-luna`, `gpt-6.1-terra` | – | 1 | – |
-| codex | `pro-100` | yes | `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol` | `gpt-6-astra` | 2 | – |
-| codex | `pro-200` | yes | `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol` | `gpt-6-astra` | 2 | – |
-| codex | `pro-500` | yes | `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol` | `gpt-6-astra` | 3 | – |
-| codex | `business` | yes | `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol` | `gpt-6-astra` | 2 | – |
-| codex | `api` | yes | `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol` | `gpt-6-astra` | 3 | API usage is billed per token |
+| codex | `plus` | yes | `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol`, `gpt-6.2-sol` | – | 1 | – |
+| codex | `pro-100` | yes | `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol`, `gpt-6.2-sol` | `gpt-6-astra`, `gpt-6.2-astra` | 2 | – |
+| codex | `pro-200` | yes | `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol`, `gpt-6.2-sol` | `gpt-6-astra`, `gpt-6.2-astra` | 2 | – |
+| codex | `pro-500` | yes | `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol`, `gpt-6.2-sol` | `gpt-6-astra`, `gpt-6.2-astra` | 3 | – |
+| codex | `business` | yes | `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol`, `gpt-6.2-sol` | `gpt-6-astra`, `gpt-6.2-astra` | 2 | – |
+| codex | `api` | yes | `gpt-6-luna`, `gpt-6.1-terra`, `gpt-6.1-sol`, `gpt-6.2-sol` | `gpt-6-astra`, `gpt-6.2-astra` | 3 | API usage is billed per token |
 | antigravity | `none` | no | – | – | 0 | no Antigravity subscription selected |
 | antigravity | `free` | yes | `gemini-4-hydrogen`, `gemini-4-neon` | – | 1 | – |
 | antigravity | `plus` | yes | `gemini-4-hydrogen`, `gemini-4-neon`, `gemini-4-carbon` | – | 1 | – |
@@ -176,9 +176,8 @@ The parent is the model of the orchestrating Claude session. It needs an eligibl
 
 | Claude tier | Default parent / effort | `--parent` options |
 |---|---|---|
-| `pro`, `team-standard` | `sonnet` / `medium` | `sonnet`, `opus` |
-| `max`, `team-premium` | `opus` / `medium` | `sonnet`, `opus` |
-| `ultra`, `api` | `opus` / `medium` | `sonnet`, `opus`, `fable` |
+| `pro`, `team-standard`, `team-premium` | `sonnet` / `medium` (team-premium: `opus`) | `sonnet`, `opus` |
+| `max`, `ultra`, `api` | `opus` / `medium` | `sonnet`, `opus`, `fable` |
 
 An `api` tier counts only with `--allow-usage-credits`.
 
@@ -414,7 +413,7 @@ restrictions):
 |---|---|
 | Saving primary quota, lightweight triage, or small tasks | `gemini-4-neon`, `gpt-6-luna` |
 | General multi-file or UI orchestration | `claude-sonnet-5-5`, `gemini-4-neon` |
-| Deeper debugging, architecture, or high-risk `L2`/`L3` coordination | `gpt-6.1-terra`, `gpt-6.1-sol`, `claude-opus-5-5`, `gemini-4-carbon` |
+| Deeper debugging, architecture, or high-risk `L2`/`L3` coordination | `gpt-6.2-sol`, `gpt-6.1-terra`, `gpt-6.1-sol`, `claude-opus-5-5`, `gemini-4-carbon` |
 
 Three practical nuances to keep in mind:
 

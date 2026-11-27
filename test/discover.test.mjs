@@ -75,7 +75,7 @@ test('discover is bounded by timeoutMs and runs nothing but version checks and c
 
 test('discover reports drift, missing models and versions', async () => {
   const listing = {
-    codex: ['gpt-6.2-sol', 'gpt-7-nova', 'gpt-6-luna', 'bad id; rm -rf', 'gpt-5.5'],
+    codex: ['gpt-6.3-sol', 'gpt-7-nova', 'gpt-6-luna', 'bad id; rm -rf', 'gpt-5.5'],
     // Cross-hosted Claude models are configured for antigravity but never counted as missing.
     antigravity: ['gemini-4-neon', 'gemini-4-hydrogen', 'gemini-4-carbon'],
   };
@@ -90,11 +90,11 @@ test('discover reports drift, missing models and versions', async () => {
   assert.deepEqual(result.binaries.claude, { found: false, version: null });
   assert.deepEqual(result.binaries.codex, { found: true, version: '1.2.3' });
   assert.deepEqual(result.discoveredNew, [
-    { provider: 'codex', model: 'gpt-6.2-sol', family: 'gpt-sol', version: '6.2', supersedes: 'gpt-6.1-sol' },
+    { provider: 'codex', model: 'gpt-6.3-sol', family: 'gpt-sol', version: '6.3', supersedes: 'gpt-6.2-sol' },
     { provider: 'codex', model: 'gpt-7-nova', family: 'gpt-nova', version: '7' },
     { provider: 'codex', model: 'gpt-5.5', family: null, version: null },
   ]);
-  assert.deepEqual(result.missingConfigured, ['codex:gpt-6.1-terra', 'codex:gpt-6.1-sol', 'codex:gpt-6-astra']);
+  assert.deepEqual(result.missingConfigured, ['codex:gpt-6.1-terra', 'codex:gpt-6.1-sol', 'codex:gpt-6.2-sol', 'codex:gpt-6-astra', 'codex:gpt-6.2-astra']);
   assert.deepEqual(result.models['codex:gpt-6-luna'], { status: 'available', source: 'discover', checkedAt: iso(0) });
 });
 
@@ -102,8 +102,8 @@ test('discover default runner lists through a real process and a .cmd shim, and 
   const run = (argv, timeoutMs = 10_000) => discover({
     config: { ...config(), discovery: { codex: argv } }, which: none, timeoutMs,
   });
-  const listed = await run([process.execPath, '-e', "console.log('gpt-6.2-sol')"]);
-  assert.equal(listed.discoveredNew[0]?.model, 'gpt-6.2-sol');
+  const listed = await run([process.execPath, '-e', "console.log('gpt-6.3-sol')"]);
+  assert.equal(listed.discoveredNew[0]?.model, 'gpt-6.3-sol');
   if (process.platform === 'win32') {
     const shim = path.join(dir(t), 'list.cmd');
     write(shim, '@echo gpt-6.3-sol\r\n');

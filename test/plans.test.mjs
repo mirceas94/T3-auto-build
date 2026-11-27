@@ -101,11 +101,12 @@ test('CLI-less tiers yield no models, no builders and a warning', () => {
 test('rosters per tier', () => {
   const ids = (provider, id) => getTier(provider, id).models.map((m) => m.model);
   assert.deepEqual(ids('claude', 'pro'), ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5']);
+  assert.deepEqual(ids('claude', 'max'), ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-2']);
   assert.deepEqual(ids('claude', 'ultra'), ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-2']);
-  assert.deepEqual(ids('claude', 'team-premium'), ids('claude', 'max'));
-  assert.deepEqual(ids('codex', 'plus'), ['gpt-6-luna', 'gpt-6.1-terra']);
+  assert.deepEqual(ids('claude', 'team-premium'), ['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5']);
+  assert.deepEqual(ids('codex', 'plus'), ['gpt-6-luna', 'gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6.2-sol']);
   for (const id of ['pro-100', 'pro-200', 'pro-500', 'business', 'api']) {
-    assert.deepEqual(ids('codex', id), ['gpt-6-luna', 'gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6-astra'], id);
+    assert.deepEqual(ids('codex', id), ['gpt-6-luna', 'gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6.2-sol', 'gpt-6-astra', 'gpt-6.2-astra'], id);
   }
   assert.deepEqual(ids('antigravity', 'free'), ['gemini-4-hydrogen', 'gemini-4-neon']);
   for (const id of ['plus', 'pro-trial']) {
@@ -124,9 +125,10 @@ test('claude parent defaults and --parent validation', () => {
   assert.deepEqual(resolveTiers({ claude: 'max' }).parent, { model: 'opus', effort: 'medium' });
   assert.deepEqual(resolveTiers({ claude: 'ultra' }).parent, { model: 'opus', effort: 'medium' });
   assert.deepEqual(resolveTiers({ claude: 'max' }, { parent: null }).parent, { model: 'opus', effort: 'medium' });
+  assert.deepEqual(resolveTiers({ claude: 'max' }, { parent: 'fable' }).parent, { model: 'fable', effort: 'medium' });
   assert.deepEqual(resolveTiers({ claude: 'ultra' }, { parent: 'fable' }).parent, { model: 'fable', effort: 'medium' });
   assert.deepEqual(getTier('claude', 'ultra').parentOptions, ['sonnet', 'opus', 'fable']);
-  assert.throws(() => resolveTiers({ claude: 'max' }, { parent: 'fable' }), /fable/);
+  assert.throws(() => resolveTiers({ claude: 'pro' }, { parent: 'fable' }), /fable/);
   assert.throws(() => resolveTiers({ claude: 'pro' }, { parent: 'toString' }), /toString/);
   assert.throws(() => resolveTiers({ codex: 'plus' }, { parent: 'opus' }), /opus/);
   assert.equal(resolveTiers({ codex: 'plus' }).parent, null);
@@ -195,7 +197,7 @@ test('slot assignment rotates providers and applies v1 efforts', () => {
   assert.notEqual(first('testerB'), first('builderB'));
   assert.notEqual(first('auditorA'), first('builderA'));
   assert.deepEqual(ladders.tier1, ladders.commandRunner);
-  assert.deepEqual(ladders.builderA.slice(0, 3), ['claude-sonnet-5-5', 'gpt-6.1-terra', 'gemini-4-neon']);
+  assert.deepEqual(ladders.builderA.slice(0, 3), ['claude-sonnet-5-5', 'gpt-6.2-sol', 'gemini-4-neon']);
   assert.ok(ladders.architect.filter((e) => !isScarce(parse(e))).every((e) => e.endsWith('@high')));
   for (const slot of ['auditorA', 'auditorB']) {
     assert.ok(ladders[slot][0].endsWith('@high'));
@@ -203,7 +205,7 @@ test('slot assignment rotates providers and applies v1 efforts', () => {
   }
   assert.ok(ladders.builderA.includes('antigravity:claude-opus-5-5@medium'));
   assert.ok(ladders.builderA.includes('claude-fable-5-2@medium'));
-  assert.deepEqual(ladders.dualAudit, ['claude-opus-5-5@high', 'gpt-6.1-sol@high']);
+  assert.deepEqual(ladders.dualAudit, ['claude-opus-5-5@high', 'gpt-6.2-sol@high']);
   assert.equal(maxParallelBuilders, 6);
   assert.deepEqual(resolveTiers({ antigravity: 'pro' }).ladders.dualAudit, ['gemini-4-carbon@high']);
 });

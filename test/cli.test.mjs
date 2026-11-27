@@ -56,11 +56,11 @@ test('sync-models --apply promotes known drift, backs up config, re-renders, and
   assert.equal(result.status, 0, result.stderr);
   const configPath = s.path('auto-build.config.json');
   const config = json(configPath);
-  assert.ok(config.allowlist.Codex.includes('gpt-6.1-sol'));
+  assert.ok(config.allowlist.Codex.includes('gpt-6.2-sol'));
   write(s.path('auto-build-availability.json'), {
     schemaVersion: 1, checkedAt: new Date().toISOString(), ttlMs: 43_200_000, binaries: {}, models: {},
     discoveredNew: [
-      { provider: 'codex', model: 'gpt-6.2-sol', family: 'gpt-sol', version: '6.2', supersedes: 'gpt-6.1-sol' },
+      { provider: 'codex', model: 'gpt-6.3-sol', family: 'gpt-sol', version: '6.3', supersedes: 'gpt-6.2-sol' },
       { provider: 'codex', model: 'gpt-7-mystery', family: null, version: null },
     ], missingConfigured: [],
   });
@@ -68,12 +68,12 @@ test('sync-models --apply promotes known drift, backs up config, re-renders, and
   result = s.cli('sync-models', '--apply');
   assert.equal(result.status, 0, result.stderr);
   const updated = json(configPath);
-  assert.ok(updated.allowlist.Codex.includes('gpt-6.2-sol'));
-  assert.ok(!updated.allowlist.Codex.includes('gpt-6.1-sol'));
+  assert.ok(updated.allowlist.Codex.includes('gpt-6.3-sol'));
+  assert.ok(!updated.allowlist.Codex.includes('gpt-6.2-sol'));
   assert.ok(!updated.allowlist.Codex.includes('gpt-7-mystery'));
   assert.equal(fs.readFileSync(`${configPath}.bak`, 'utf8'), oldText);
-  assert.match(fs.readFileSync(s.path('skills', 'auto-build', 'SKILL.md'), 'utf8'), /gpt-6\.2-sol/);
-  assert.match(result.stdout, /promoted codex:gpt-6\.1-sol -> codex:gpt-6\.2-sol/);
+  assert.match(fs.readFileSync(s.path('skills', 'auto-build', 'SKILL.md'), 'utf8'), /gpt-6\.3-sol/);
+  assert.match(result.stdout, /promoted codex:gpt-6\.2-sol -> codex:gpt-6\.3-sol/);
   assert.match(result.stdout, /unknown family codex:gpt-7-mystery/);
 });
 
@@ -86,7 +86,7 @@ test('sync-models --apply --dry-run does not modify config or SKILL.md, and avai
   const beforeSkill = fs.readFileSync(skillPath, 'utf8');
   write(s.path('auto-build-availability.json'), {
     schemaVersion: 1, checkedAt: 'not-a-date', ttlMs: 0, binaries: {}, models: {},
-    discoveredNew: [{ provider: 'codex', model: 'gpt-6.2-sol', family: 'gpt-sol', version: '6.2', supersedes: 'gpt-6.1-sol' }],
+    discoveredNew: [{ provider: 'codex', model: 'gpt-6.3-sol', family: 'gpt-sol', version: '6.3', supersedes: 'gpt-6.2-sol' }],
     missingConfigured: [],
   });
   const dry = s.cli('sync-models', '--apply', '--dry-run');
