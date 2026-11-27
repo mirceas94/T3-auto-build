@@ -118,6 +118,7 @@ test('CI, Dependabot, issue template, and README release links are valid', () =>
   assert.equal(publish.match(/^permissions:[ \t]*\n((?:[ \t]+\S.*\n)+)/m)?.[1].trim(), 'contents: read');
   assert.match(publish.slice(publish.indexOf('\njobs:')), /^ {4}permissions:\n(?: {6}.*\n)*? {6}id-token:\s*write/m);
   assert.match(publish, /persist-credentials:\s*false/);
+  assert.match(publish, /package-manager-cache:\s*false/);
   // A run: value plus every following line indented deeper than the key, or blank.
   const runs = [...publish.replace(/^([ \t]*)- /gm, '$1  ').matchAll(/^([ \t]*)run:.*(?:\n(?:\1[ \t]+.*|[ \t]*(?=\n)))*/gm)].map(([block]) => block);
   assert.equal(runs.length, publish.match(/\brun:/g).length);
