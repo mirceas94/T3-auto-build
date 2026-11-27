@@ -1,6 +1,7 @@
 // Cooldown (rate limit / quota lockout) state shared by the installed hooks. Node >=18, node:* only.
 import fs from 'node:fs';
 import path from 'node:path';
+import { HEAVY_MODELS, LEGACY_HEAVY_MODELS, SCARCE_POOL } from './_catalog.mjs';
 import {
   canonicalProvider, exactProvider, inferProvider, isObject, isStringList, modelKeys, normalizeName, parseJson,
   resolveTarget, warn,
@@ -20,8 +21,7 @@ export function withRecheck(entry, now = Date.now()) {
   return { ...entry, setAt: new Date(setAt).toISOString(), recheckAfter: new Date(setAt + RECHECK_AFTER).toISOString() };
 }
 
-const HEAVY_MODELS = { claude: ['Claude Opus 5.5'], codex: ['gpt-6-luna'], antigravity: ['Gemini 4 Carbon'] };
-export const SCARCE_POOL = { claude: 'fable', codex: 'astra', antigravity: 'third-party-claude' };
+export { SCARCE_POOL };
 
 const untilOf = (entry) => {
   const text = entry?.until ?? entry?.until_utc;
@@ -168,7 +168,8 @@ function matches(key, scope, { provider, providers, model, config }) {
   if (pool.toLowerCase() === 'heavy') {
     const family = exact ?? canonicalProvider(providerKey) ?? wanted;
     const configured = config?.tiers?.[family]?.heavyModels;
-    const legacyModels = isStringList(configured) ? configured : HEAVY_MODELS[family] ?? [];
+    const builtIn = Object.hasOwn(HEAVY_MODELS, family) ? [...LEGACY_HEAVY_MODELS[family], ...HEAVY_MODELS[family]] : [];
+    const legacyModels = isStringList(configured) ? configured : builtIn;
     return targets.some((item) => hostMatch(item)
       && (legacyModels.some(modelMatch) || item.pool === SCARCE_POOL[family]));
   }

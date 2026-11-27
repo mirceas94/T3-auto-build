@@ -175,6 +175,31 @@ test('existing and edited files are skipped; --force backs up; uninstall keeps e
   assert.equal(read(box.path('CLAUDE.md.bak.1')), 'second\n');
 });
 
+test('init without --force refuses to mix hook versions; --force backs up and replaces all', (t) => {
+  const box = sandbox(t);
+  ok(box.cli('init', '--yes'));
+  const first = tree(box.target);
+  const hook = (name) => box.path('hooks', 't3-auto-build', name);
+  write(hook('_shared.mjs'), '// user edit');
+  // An untouched hook of an older version, which a plain init would replace.
+  write(hook('pre-tool-use.mjs'), '// old');
+  const manifest = json(box.path(MANIFEST));
+  manifest.files['hooks/t3-auto-build/pre-tool-use.mjs'] = hashOf('// old');
+  write(box.path(MANIFEST), manifest);
+  const before = tree(box.target);
+
+  const refused = box.cli('init', '--yes');
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /_shared\.mjs has local changes.*--force/);
+  assert.deepEqual(tree(box.target), before);
+
+  ok(box.cli('init', '--yes', '--force'));
+  assert.equal(read(hook('_shared.mjs.bak')), '// user edit');
+  for (const file of Object.keys(first).filter((name) => name.startsWith('hooks/'))) {
+    assert.equal(read(box.path(file)), first[file], file);
+  }
+});
+
 test('edited config is the base: re-render, drop banned entries, flags override', (t) => {
   const box = sandbox(t);
   ok(box.cli('init', '--yes'));

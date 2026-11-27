@@ -10,15 +10,18 @@ import { parseSkillTargets } from '../lib/mirrors.mjs';
 import { CliError, PACKAGE_VERSION, resolveTarget } from '../lib/paths.mjs';
 import { syncModels } from '../lib/probe.mjs';
 import { CATALOG, PROVIDERS } from '../lib/plans.mjs';
+import { formatPreflight, runPreflight } from '../lib/preflight.mjs';
 import { confirmYes, initPrompts, parseChoice, parsePercent, parseTierSpec, TIER_FLAGS } from '../lib/prompt.mjs';
 import { QUOTA_WINDOWS, quotaCheck, quotaClear, quotaSet, quotaStatus } from '../lib/quota.mjs';
-import { AVAILABILITY_FILE, CONFIG_FILE, readAvailability, readJson } from '../hooks/_shared.mjs';
+import { REF_TOPICS, getReference } from '../lib/ref.mjs';
+import { formatStats, recordTrace, summarizeStats } from '../lib/telemetry.mjs';
+import { AVAILABILITY_FILE, CONFIG_FILE, loadConfig, parseJson, readAvailability, readJson } from '../hooks/_shared.mjs';
 
 const USAGE = `Usage: t3-auto-build <command> [options]
 
 Commands:
   init                         install or update (interactive unless --yes)
-  upgrade [--yes]              convert a legacy v1 config to v2
+  upgrade [--yes]              convert a legacy v1 or v2 config to v3
   check-models                  inspect availability and model drift (cached probes)
   sync-models                   probe and sync models, or apply discovered drift
   availability mark <ref> <status> [--ttl 24h] [--reason <text>]
@@ -27,6 +30,10 @@ Commands:
   quota status                 show active locks and drop expired ones
   quota clear [subject]        remove locks of a provider/model (or --all)
   quota check [provider]       run official login status commands
+  preflight                    check models, then print locks, ladders, baseline and resume state
+  ref <topic>                  print reference text: ${REF_TOPICS.join(' | ')}
+  trace record [json]          append one step to the run ledger (JSON or field flags)
+  stats                        summarize the run ledger
   doctor                       check installation, tiers, cache, and drift
   uninstall                    remove what init installed, keeping your edits
 
@@ -76,26 +83,54 @@ quota set only:
   --reason <text>              note shown by quota status
 quota clear flag: --all        remove every lock
 
+preflight only:
+  --flags <text>               inline run flags, e.g. "--codex-only --dry-run"
+  --cwd <dir>                  project dir (default: current dir)
+  --refresh                    ignore the probe cache TTL
+  --json                       print machine-readable results
+
+trace record only (instead of a JSON argument):
+  --step <name>                step name; "run" counts one run in stats
+  --model <model>              model that ran the step
+  --provider <name>            provider that ran the step
+  --outcome <text>             result; text containing "reject" counts as an audit rejection
+  --level <L0|L1|L2|L3>        complexity level
+  --shape <A|B>                work shape
+  --effort <level>             low | medium | high
+  --duration <ms>              step duration in milliseconds
+
+stats only:
+  --days <n>                   window in days (default 30)
+  --json                       print machine-readable results
+
+doctor only:
+  --fix                        repair what can be repaired (--yes skips the prompt)
+  --cwd <dir>                  project dir to check
+
 Examples:
   t3-auto-build init --claude-tier pro --codex-tier plus --antigravity-tier pro --parent opus
   t3-auto-build check-models --json
+  t3-auto-build preflight --json --flags "--codex-only"
+  t3-auto-build trace record --step build --model gpt-6.1-sol --outcome ok --duration 42000
   t3-auto-build sync-models --refresh --probe-scarce
   t3-auto-build availability mark antigravity:claude-opus-5-5 plan-restricted --ttl 24h
   t3-auto-build quota set antigravity:claude-opus-5-5 --pool third-party-claude
   Overflow to cross-hosted models requires an explicit provider, e.g. antigravity:claude-opus-5-5.`;
 
-const VALUE_FLAGS = ['target', 'preset', 'modules', 'compaction', 'tiers', 'providers', 'until', 'reason', 'parent', 'claude-tier', 'codex-tier', 'antigravity-tier', 'ttl', 'pool', 'skill-targets'];
-const SWITCHES = ['yes', 'force', 'help', 'version', 'probe', 'dry-run', 'all', 'auto', 'refresh', 'probe-scarce', 'recheck-locks', 'apply', 'json', 'allow-usage-credits', 'allow-fast-modes', 'verified-org', ...QUOTA_WINDOWS];
+const VALUE_FLAGS = ['target', 'preset', 'modules', 'compaction', 'tiers', 'providers', 'until', 'reason', 'parent', 'claude-tier', 'codex-tier', 'antigravity-tier', 'ttl', 'pool', 'skill-targets', 'flags', 'cwd', 'days', 'step', 'model', 'provider', 'outcome', 'level', 'shape', 'effort', 'duration'];
+const SWITCHES = ['yes', 'force', 'help', 'version', 'probe', 'dry-run', 'all', 'auto', 'refresh', 'probe-scarce', 'recheck-locks', 'apply', 'json', 'allow-usage-credits', 'allow-fast-modes', 'verified-org', 'fix', ...QUOTA_WINDOWS];
+const TRACE_FLAGS = ['step', 'model', 'provider', 'outcome', 'level', 'shape', 'effort', 'duration'];
 const COMMAND_FLAGS = {
   init: ['preset', 'modules', 'compaction', 'tiers', 'probe', 'yes', 'force', ...Object.values(TIER_FLAGS).map((f) => f.slice(2)), 'parent', 'allow-usage-credits', 'allow-fast-modes', 'verified-org', 'skill-targets'],
-  upgrade: ['yes'], doctor: [], uninstall: [],
+  upgrade: ['yes'], doctor: ['fix', 'yes', 'cwd'], uninstall: [],
+  preflight: ['json', 'flags', 'cwd', 'refresh'], ref: [], 'trace record': TRACE_FLAGS, stats: ['days', 'json'],
   'check-models': ['refresh', 'probe-scarce', 'recheck-locks', 'json'],
   'sync-models': ['dry-run', 'providers', 'yes', 'auto', 'force', 'refresh', 'probe-scarce', 'apply'],
   'availability mark': ['ttl', 'reason'], 'availability status': [],
   'quota set': [...QUOTA_WINDOWS, 'until', 'reason', 'pool'],
   'quota status': [], 'quota clear': ['all'], 'quota check': [],
 };
-const ARGUMENTS = { upgrade: [0, 0], 'availability mark': [2, 2], 'quota set': [1, 1], 'quota clear': [0, 1], 'quota check': [0, 1] };
+const ARGUMENTS = { upgrade: [0, 0], 'availability mark': [2, 2], 'quota set': [1, 1], 'quota clear': [0, 1], 'quota check': [0, 1], ref: [1, 1], 'trace record': [0, 1] };
 
 function parseArgs(argv) {
   const flags = {};
@@ -107,7 +142,9 @@ function parseArgs(argv) {
     if (SWITCHES.includes(name) && inline === undefined) flags[name] = true;
     else if (VALUE_FLAGS.includes(name)) {
       const value = inline ?? argv[(i += 1)];
-      if (!value || (inline === undefined && value.startsWith('--'))) throw new CliError(`--${name} needs a value`, 2);
+      // --flags carries other flags as its text, so it may start with "--" or be empty.
+      const missing = name === 'flags' ? value === undefined : !value || (inline === undefined && value.startsWith('--'));
+      if (missing) throw new CliError(`--${name} needs a value`, 2);
       flags[name] = value;
     } else throw new CliError(`unknown option ${argument}`, 2);
   }
@@ -228,20 +265,62 @@ function quota(action, target, subject, flags) {
   return quotaSet(target, subject, { window: chosen[0] === 'until' ? undefined : chosen[0], until: flags.until, reason: flags.reason, pool: flags.pool });
 }
 
+function projectDir(value) {
+  if (value === undefined) return undefined;
+  const dir = path.resolve(value);
+  if (!fs.statSync(dir, { throwIfNoEntry: false })?.isDirectory()) throw new CliError(`--cwd is not a directory: ${dir}`, 2);
+  return dir;
+}
+
+async function preflight(target, flags) {
+  const result = await runPreflight({ configDir: target, cwd: projectDir(flags.cwd), flags: flags.flags, refresh: flags.refresh });
+  console.log(flags.json ? JSON.stringify(result, null, 2) : formatPreflight(result));
+}
+
+const wholeNumber = (text) => (/^\d+$/.test(text) ? Number(text) : NaN);
+
+function trace(target, json, flags) {
+  const fields = TRACE_FLAGS.filter((name) => flags[name] !== undefined);
+  if ((json === undefined) === (fields.length === 0)) throw new CliError('trace record needs a JSON entry or field flags (not both)', 2);
+  let entry;
+  if (json === undefined) {
+    entry = Object.fromEntries(fields.map((name) => (name === 'duration'
+      ? ['durationMs', wholeNumber(flags.duration)] : [name, flags[name]])));
+  } else {
+    try { entry = parseJson(json); } catch { throw new CliError('trace record: the entry is not valid JSON', 2); }
+  }
+  const { telemetry } = loadConfig(target);
+  if (telemetry?.enabled === false) return console.log('telemetry is disabled; nothing was recorded');
+  recordTrace(target, entry, { maxBytes: telemetry?.maxBytes });
+  console.log('recorded');
+}
+
+function stats(target, flags) {
+  const days = flags.days === undefined ? undefined : wholeNumber(flags.days);
+  if (days !== undefined && !(days > 0)) throw new CliError('--days must be a whole number above 0', 2);
+  const summary = summarizeStats(target, { days });
+  console.log(flags.json ? JSON.stringify(summary, null, 2) : formatStats(summary));
+}
+
 async function main(argv) {
   const { flags, positional } = parseArgs(argv);
   if (flags.help) return console.log(USAGE);
   if (flags.version) return console.log(PACKAGE_VERSION);
   const [first, ...rest] = positional;
-  const command = first === 'quota' || first === 'availability' ? `${first} ${rest.shift()}` : first;
+  const command = ['quota', 'availability', 'trace'].includes(first) ? `${first} ${rest.shift()}` : first;
   const [min, max] = ARGUMENTS[command] ?? [0, 0];
   if (!Object.hasOwn(COMMAND_FLAGS, command) || rest.length < min || rest.length > max) throw new CliError(USAGE, 2);
   const stray = Object.keys(flags).find((name) => name !== 'target' && !COMMAND_FLAGS[command].includes(name));
   if (stray) throw new CliError(`--${stray} is not valid with ${command}`, 2);
+  if (command === 'doctor' && flags.yes && !flags.fix) throw new CliError('--yes is only valid with doctor --fix', 2);
   const target = resolveTarget(flags.target);
   if (command === 'init') await init(target, flags);
   else if (command === 'upgrade') await upgrade(target);
-  else if (command === 'doctor') process.exitCode = doctor(target);
+  else if (command === 'doctor') process.exitCode = await doctor(target, { fix: flags.fix, yes: flags.yes, cwd: projectDir(flags.cwd) });
+  else if (command === 'preflight') await preflight(target, flags);
+  else if (command === 'ref') console.log(getReference(rest[0], { configDir: target }));
+  else if (command === 'trace record') trace(target, rest[0], flags);
+  else if (command === 'stats') stats(target, flags);
   else if (command === 'uninstall') uninstall(target);
   else if (command === 'check-models') await check(target, flags);
   else if (command === 'availability mark' || command === 'availability status') availability(command.slice('availability '.length), target, rest, flags);

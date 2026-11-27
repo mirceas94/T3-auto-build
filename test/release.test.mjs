@@ -25,7 +25,7 @@ test('release CLI flags and usage errors', (t) => {
 });
 
 test('package identity, dependencies, and packed file exclusions', () => {
-  assert.equal(pkg.version, '2.3.0');
+  assert.equal(pkg.version, '3.0.0');
   for (const value of [pkg.repository.url, pkg.homepage, pkg.bugs.url]) assert.match(value, /github\.com\/mirceas94\/T3-auto-build/);
   for (const k of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies', 'bundledDependencies']) assert.ok(!pkg[k] || (Array.isArray(pkg[k]) ? pkg[k].length === 0 : Object.keys(pkg[k]).length === 0), `${k} must be empty`);
   for (const f of pkg.files) {

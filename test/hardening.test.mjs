@@ -13,7 +13,7 @@ const bash = (command) => ({ tool_name: 'Bash', tool_input: { command } });
 
 function installed(t) {
   const box = sandbox(t);
-  const result = box.cli('init', '--yes');
+  const result = box.cli('init', '--yes', '--skill-targets', 'none');
   assert.equal(result.status, 0, result.stderr);
   box.cooldowns = box.path('auto-build-cooldowns.json');
   return box;

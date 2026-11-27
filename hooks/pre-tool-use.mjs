@@ -3,8 +3,8 @@ import path from 'node:path';
 import { isLocked, readCooldowns } from './_quota.mjs';
 import {
   AVAILABILITY_FILE, COOLDOWN_FILE, canonicalProvider, configDirOf, effectiveAllowlist, fastModeRequested, isBanned,
-  isPlanRestricted, loadConfig, matchRetired, modelKeys, normalizeModel, payloadProblem, prop, readAvailability,
-  readPayload, resolveTarget, restrictedBy, str, warn,
+  isPlanRestricted, isSupportedSchema, loadConfig, matchRetired, modelKeys, normalizeModel, payloadProblem, prop,
+  readAvailability, readPayload, resolveTarget, restrictedBy, str, warn,
 } from './_shared.mjs';
 
 // (?=\n?$) mirrors .NET's "$", which also matches before a trailing newline.
@@ -96,7 +96,7 @@ function modelBlock(model, { providers, config, availability, allowed, known, kn
     return `Blocked by availability hook: model '${model}' is ${restriction.status} on ${target.provider}`
       + `${Number.isNaN(until) ? '' : ` until ${new Date(until).toISOString()}`}.`;
   }
-  const perProvider = config.schemaVersion === 2 || target.crossHosted
+  const perProvider = isSupportedSchema(config) || target.crossHosted
     || providers.some((p) => canonicalProvider(p) !== null) || allCanonical;
   const pool = perProvider && target.provider ? (knownByProvider.get(target.provider) ?? new Set()) : known;
   if (!keys.some((key) => pool.has(key))) {
@@ -109,6 +109,8 @@ function blockReason(payload) {
   const problem = payloadProblem(payload);
   if (problem) return `Blocked by safety hook: ${problem}.`;
   const tool = str(prop(payload, 'tool_name'));
+  // Fast path: no other tool is guarded, so none of them reads a file.
+  if (!/^(edit|write|multiedit|bash)$|delegate_task/i.test(tool)) return null;
   const input = prop(payload, 'tool_input');
 
   if (['edit', 'write', 'multiedit'].includes(tool.toLowerCase())) {

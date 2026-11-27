@@ -128,7 +128,7 @@ test('pre-tool-use fails open on unparsable stdin and closed on parsed invalid s
 
 test('unsupported schema version uses defaults, including retired and allowlist checks', (t) => {
   const config = v2Config();
-  config.schemaVersion = 3;
+  config.schemaVersion = 4;
   config.allowlist.Codex = ['gpt-5.4'];
   config.models = [{ provider: 'codex', model: 'gpt-5.4', pool: 'standard', scarceQuota: false }];
   const box = installed(t, config);
@@ -158,7 +158,7 @@ test('upgrade creates byte-identical backup, is idempotent, and rejects malforme
   fs.writeFileSync(configPath, original);
   const first = box.cli('upgrade', '--target', box.target);
   assert.equal(first.status, 0, first.stderr);
-  assert.equal(json(configPath).schemaVersion, 2);
+  assert.equal(json(configPath).schemaVersion, 3);
   assert.equal(read(path.join(box.target, 'auto-build.config.json.bak')), original);
   const upgraded = read(configPath);
   const second = box.cli('upgrade', '--target', box.target);
@@ -170,6 +170,26 @@ test('upgrade creates byte-identical backup, is idempotent, and rejects malforme
   const failed = box.cli('upgrade', '--target', box.target);
   assert.notEqual(failed.status, 0, 'malformed config unexpectedly upgraded');
   assert.equal(read(configPath), malformed, 'malformed config was modified');
+});
+
+test('upgrade takes v2 to v3 with a byte-identical backup and rejects schema version 4 untouched', (t) => {
+  const box = sandbox(t);
+  const init = box.cli('init', '--yes');
+  assert.equal(init.status, 0, init.stderr);
+  const configPath = box.path('auto-build.config.json');
+  const original = JSON.stringify({ ...v2Config(), schemaVersion: 2 });
+  fs.writeFileSync(configPath, original);
+  const first = box.cli('upgrade', '--target', box.target);
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(json(configPath).schemaVersion, 3);
+  assert.equal(read(`${configPath}.bak`), original);
+
+  const unknown = JSON.stringify({ ...v2Config(), schemaVersion: 4 });
+  fs.writeFileSync(configPath, unknown);
+  const failed = box.cli('upgrade', '--target', box.target);
+  assert.equal(failed.status, 1);
+  assert.match(failed.stderr, /unknown schemaVersion 4/);
+  assert.equal(read(configPath), unknown);
 });
 
 test('completeConfig does not mask ladders: null before configProblem validation', () => {

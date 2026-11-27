@@ -4,6 +4,42 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-11-27
+
+### Added
+
+- `preflight [--json] [--flags <text>] [--cwd <dir>] [--refresh]`: one deterministic Step 0 call that runs the model check (including cooldown pruning and lock rechecks) and reports active locks, resolved ladders, `recheck-via-t3` canaries, the `git status` baseline and resume state, with `expiresAt` and `configHash`.
+- `ref <flags|cooldowns|state|all>`: on-demand reference text rendered from the installed config.
+- `trace record` and `stats [--days <n>] [--json]`: a local JSONL run ledger (`auto-build-ledger.jsonl`) with size rotation, and a summary of it.
+- `doctor --fix [--yes] [--cwd <dir>]`: dry-run by default; repairs drifted or missing hooks and their manifest hashes, skill mirrors, the runtime snapshot and the state file's git `info/exclude` entry.
+- `catalog.overrides.json` (v3 configs): retire more models and alias model names without a package release. A `models` list is validated but not yet applied.
+- Config keys `telemetry`, `preflight` and `catalogOverrides`.
+- Generated `auto-build-runtime.json` snapshot of the allowlist and bans for v3 configs.
+
+### Changed
+
+- Slim skill: the template is ~5.1 KB (down from ~21 KB) and the rendered `SKILL.md` is over 70% smaller (5.2–6.1 KB across presets and tiers). Step 0 is a single `preflight --json` call, flag/cooldown/state details come from `t3-auto-build ref`, and rendered ladders use compact numbered allowlist indices.
+- The model catalog and retired list moved to `hooks/_catalog.mjs`, which is installed with the hooks.
+- `upgrade` converts v1 and v2 configs to v3. It backs up the files it may change first and restores them if a write fails.
+- `pre-tool-use.mjs` returns early for unguarded tools such as `Read`, `Grep` and `Glob`, after the input shape check.
+- `pre-compact.mjs` omits empty list lines.
+- Internal modules split into `lib/install/{plan,write,upgrade}.mjs` and `lib/discover/{sources,merge,cache}.mjs`.
+
+### Breaking
+
+- New subscription configs and `upgrade` write `schemaVersion: 3`.
+- 2.x hooks and CLI do not know schema 3 and fall back to default settings. Do not downgrade an upgraded config without restoring its `.bak` backup.
+- `upgrade` now also converts v2 configs, and stops if an installed hook has local changes.
+
+### Security
+
+- `catalog.overrides.json` cannot un-retire a model. An alias cannot involve a retired model or link two providers or two built-in models. An invalid file is ignored except for a well-formed `retiredModels` list.
+- The run ledger is local only, keeps a fixed set of fields as single short lines, refuses a symlinked ledger path and can be turned off with `telemetry.enabled: false`.
+
+### Fixed
+
+- A legacy `tier:<provider>:heavy` cooldown also locks the catalog's scarce models of that provider, unless the config lists its own `heavyModels`.
+
 ## [2.3.0] - 2026-11-27
 
 ### Added
@@ -163,6 +199,7 @@ See [Migrating from v1](README.md#migrating-from-v1).
 - Hardened the recursive `rm` guard, cooldown handling, the pre-compact state boundary and
   `sync-models --force`.
 
+[3.0.0]: https://github.com/mirceas94/T3-auto-build/compare/v2.3.0...v3.0.0
 [2.3.0]: https://github.com/mirceas94/T3-auto-build/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/mirceas94/T3-auto-build/compare/v2.1.2...v2.2.0
 [2.1.2]: https://github.com/mirceas94/T3-auto-build/compare/v2.1.1...v2.1.2

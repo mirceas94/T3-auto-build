@@ -4,16 +4,22 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  CATALOG_OVERRIDES_FILE, POOLS, PROVIDERS, RETIRED_MODELS, SCARCE_POOL, inferProvider, isObject, isStringList,
+  loadCatalogOverrides, matchRetired, normalizeModel, normalizeName, validateCatalogOverrides,
+} from './_catalog.mjs';
+
+export {
+  CATALOG_OVERRIDES_FILE, POOLS, PROVIDERS, RETIRED_MODELS, SCARCE_POOL, inferProvider, isObject, isStringList,
+  loadCatalogOverrides, matchRetired, normalizeModel, normalizeName, validateCatalogOverrides,
+};
 
 export const CONFIG_FILE = 'auto-build.config.json';
 export const COOLDOWN_FILE = 'auto-build-cooldowns.json';
 export const AVAILABILITY_FILE = 'auto-build-availability.json';
-export const SCHEMA_VERSION = 2;
-
-/** Always blocked: config can add to this list, never shrink it. */
-export const RETIRED_MODELS = Object.freeze([
-  'gemini-4-argon', 'gemini-3.8-flash', 'claude-4.6', 'claude-4.6-*', 'gpt-5.4', 'gpt-5.4-*', 'gpt-5.5', 'gpt-5.5-*',
-]);
+export const RUNTIME_SNAPSHOT_FILE = 'auto-build-runtime.json';
+export const LEDGER_FILE = 'auto-build-ledger.jsonl';
+export const SCHEMA_VERSION = 3;
 
 export const DEFAULTS = {
   allowlist: {
@@ -26,8 +32,6 @@ export const DEFAULTS = {
 
 export const warn = (message) => process.stderr.write(`t3-auto-build: ${message}\n`);
 
-export const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
-export const isStringList = (v) => Array.isArray(v) && v.every((s) => typeof s === 'string' && s.trim() !== '');
 export const isAllowlist = (v) =>
   isObject(v) && Object.values(v).every(isStringList) && Object.values(v).flat().length > 0;
 
@@ -42,19 +46,6 @@ export function displayPath(configDir, file) {
   const base = isDefault ? '~/.claude' : path.resolve(configDir).replace(/\\/g, '/');
   return `${base}/${file}`;
 }
-
-/** Makes a model id and its display name comparable: "claude-sonnet-5-5" == "Claude Sonnet 5.5". */
-export const normalizeName = (name) => name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-');
-
-/** 'claude' | 'codex' | 'antigravity' from a model id or display name, else null. */
-export function inferProvider(model) {
-  if (typeof model !== 'string') return null;
-  const family = normalizeName(model).match(/^(claude|gpt|gemini)-[a-z0-9]/)?.[1];
-  return { claude: 'claude', gpt: 'codex', gemini: 'antigravity' }[family] ?? null;
-}
-
-/** Drops a trailing -YYYYMMDD release date. */
-export const normalizeModel = (id) => id.replace(/-\d{8}$/, '');
 
 /** The id a provider CLI takes: config.modelIds first, else the hyphenated name (codex ids keep "."). */
 export function cliModelId(provider, displayOrId, config) {
@@ -72,18 +63,6 @@ export function modelKeys(model, config) {
     if (typeof id === 'string' && (keys.has(key(name)) || keys.has(key(id)))) keys.add(key(name)).add(key(id));
   }
   return keys;
-}
-
-/** True when the model is a retired one; a pattern ending "-*" also covers every "<stem>-..." variant. */
-export function matchRetired(model, patterns = RETIRED_MODELS) {
-  if (typeof model !== 'string') return false;
-  const key = (name) => normalizeName(normalizeModel(name.trim())).replace(/^-+|-+$/g, '');
-  const name = key(model);
-  return patterns.some((pattern) => {
-    const family = pattern.endsWith('-*');
-    const stem = key(family ? pattern.slice(0, -2) : pattern);
-    return name === stem || (family && name.startsWith(`${stem}-`));
-  });
 }
 
 // T3 provider ids to provider keys. Custom instances (codex-2) resolve by driverKind or this prefix.
@@ -164,13 +143,19 @@ function presetDefaults(preset) {
   return { ...DEFAULTS, allowlist };
 }
 
-export const isV2 = (raw) => raw?.schemaVersion === SCHEMA_VERSION;
+export const isV2 = (raw) => raw?.schemaVersion === 2;
+export const isV3 = (raw) => raw?.schemaVersion === 3;
+export const isSupportedSchema = (raw) => isV2(raw) || isV3(raw);
 
 const isModelList = (v) => Array.isArray(v) && v.every((m) => isObject(m) && isStringList([m.provider, m.model])
   && (m.pool === undefined || typeof m.pool === 'string')
   && (m.scarceQuota === undefined || typeof m.scarceQuota === 'boolean'));
 const isBoolean = (v) => typeof v === 'boolean';
 const isCount = (v) => Number.isInteger(v) && v >= 0;
+const isTelemetry = (v) => isObject(v) && (v.enabled === undefined || isBoolean(v.enabled))
+  && (v.maxBytes === undefined || isCount(v.maxBytes));
+const isPreflight = (v) => isObject(v) && (v.ttl === undefined || isCount(v.ttl));
+const isToggle = (v) => isBoolean(v) || isObject(v);
 
 /**
  * Missing or invalid keys come from the config's own preset, as in the installer. An unreadable file or an unknown
@@ -185,11 +170,11 @@ export function loadConfig(configDir) {
     if (error.code !== 'ENOENT') warn(`ignoring ${CONFIG_FILE} (${error.name}); using defaults`);
     raw = {};
   }
-  if (raw.schemaVersion !== undefined && !isV2(raw)) {
+  if (raw.schemaVersion !== undefined && !isSupportedSchema(raw)) {
     warn(`unknown "schemaVersion" in ${CONFIG_FILE}; using defaults`);
     raw = {};
   }
-  const v2 = isV2(raw);
+  const modern = isSupportedSchema(raw); // v2 and v3 share every v2 key
   const defaults = presetDefaults(raw.preset);
   const pick = (key, valid, fallback = defaults[key]) => {
     if (raw[key] === undefined) return fallback;
@@ -198,7 +183,7 @@ export function loadConfig(configDir) {
     return fallback;
   };
   const config = {
-    schemaVersion: v2 ? SCHEMA_VERSION : 1,
+    schemaVersion: modern ? raw.schemaVersion : 1,
     allowlist: pick('allowlist', isAllowlist),
     bannedModels: pick('bannedModels', isStringList),
     retiredModels: [...RETIRED_MODELS],
@@ -207,7 +192,7 @@ export function loadConfig(configDir) {
     allowFastModes: false,
   };
   const optional = [['tiers', isObject], ['modelIds', isObject]];
-  if (v2) {
+  if (modern) {
     // Both ban lists apply.
     config.bannedModels = [...new Set([...config.bannedModels, ...pick('userBannedModels', isStringList, [])])];
     config.retiredModels = [...new Set([...RETIRED_MODELS, ...pick('retiredModels', isStringList, [])])];
@@ -216,10 +201,20 @@ export function loadConfig(configDir) {
     config.allowFastModes = pick('allowFastModes', isBoolean, false);
     optional.push(['subscriptions', isObject], ['maxParallelBuilders', isCount]);
   }
+  if (isV3(raw)) optional.push(['telemetry', isTelemetry], ['preflight', isPreflight], ['catalogOverrides', isToggle]);
   // Optional keys: present only when set to a valid value.
   for (const [key, valid] of optional) {
     const value = pick(key, valid);
     if (value !== undefined) config[key] = value;
+  }
+  if (isV3(raw) && config.catalogOverrides !== false) {
+    const { valid, overrides, errors } = loadCatalogOverrides(configDir);
+    if (!valid) warn(`ignoring ${CATALOG_OVERRIDES_FILE} (${errors[0]})`);
+    if (overrides.retiredModels) {
+      config.retiredModels = [...new Set([...config.retiredModels, ...overrides.retiredModels])];
+    }
+    // The config's own modelIds win over an alias for the same name.
+    if (Object.keys(overrides.aliases ?? {}).length) config.modelIds = { ...overrides.aliases, ...config.modelIds };
   }
   return config;
 }

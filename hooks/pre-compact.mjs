@@ -12,10 +12,11 @@ const joinNames = (names) =>
   names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 
 const LIST_LIMIT = 20;
-const listed = (items) => {
-  if (items.length === 0) return 'none';
+/** A capped bullet line; an empty list adds nothing to the context. */
+const listed = (label, items) => {
+  if (items.length === 0) return '';
   const more = items.length > LIST_LIMIT ? `, +${items.length - LIST_LIMIT} more` : '';
-  return `${items.slice(0, LIST_LIMIT).join(', ')}${more}`;
+  return `   - ${label}: ${items.slice(0, LIST_LIMIT).join(', ')}${more}\n`;
 };
 
 /** Active availability restrictions as "provider:model (status)". */
@@ -53,11 +54,10 @@ function rules(configDir) {
   return `MANDATORY COMPACTION PRESERVATION RULES:
 When summarizing this session, you MUST preserve verbatim:
 1. STRICT ${count}-MODEL ALLOWLIST: Only ${allowed}.${bannedText}
-   - Retired (always blocked): ${listed(config.retiredModels)}
-   - Plan-restricted: ${listed(config.planRestrictedModels)}
-   - Unavailable now: ${listed(unavailable(configDir))}
-   - Scarce pools (overflow/escalation only): ${listed(scarce)}
-2. ORCHESTRATOR STATE (if $auto-build is active): Active inline flags (--fast/--strict/--plan-only/--budget/etc.), complexity tier (L0-L3), full REPO_BRIEF, IMPLEMENTER_PROVIDER, in-run EXHAUSTED models, current pipeline step, files modified so far, and exact failing test/audit file:line items.
+${listed('Retired (always blocked)', config.retiredModels)}${
+  listed('Plan-restricted', config.planRestrictedModels)}${
+  listed('Unavailable now', unavailable(configDir))}${
+  listed('Scarce pools (overflow/escalation only)', scarce)}2. ORCHESTRATOR STATE (if $auto-build is active): Active inline flags (--fast/--strict/--plan-only/--budget/etc.), complexity tier (L0-L3), full REPO_BRIEF, IMPLEMENTER_PROVIDER, in-run EXHAUSTED models, current pipeline step, files modified so far, and exact failing test/audit file:line items.
 3. COOLDOWN STATE: Any active rate-limit/quota cooldowns recorded in ${displayPath(configDir, COOLDOWN_FILE)}.${activeLocks(configDir)}
 4. ACTIVE SESSION STATE (all threads): Preserve a compact digest of:
    - Key architectural/constraint decisions already agreed upon.

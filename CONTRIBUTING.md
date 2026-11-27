@@ -49,21 +49,20 @@ node --test
 
 ## Adding a tier or model
 
-The subscription catalog lives in `lib/plans.mjs`. It is pure data and logic: no filesystem or
-processes.
+The subscription catalog lives in `hooks/_catalog.mjs` (shared models, pools, and retired list) and `lib/plans.mjs` (tier rosters and ladder resolution).
 
-- **Model:** add it to `MODELS` with its provider, `family` and numeric `version`. Drift detection
+- **Model:** add it to `MODELS` in `hooks/_catalog.mjs` with its provider, `family` and numeric `version`. Drift detection
   treats a higher version in the same family as its replacement. Add it to the role lists in
-  `PREFERENCE` and to the tier rosters that include it.
-- **Pool:** a model outside the `standard` pool is `scarceQuota`. Add a new pool to `POOLS`, set the
-  tier's `subCaps`, and check `SCARCE_POOL` in `hooks/_quota.mjs`. A cross-hosted model goes in the
+  `PREFERENCE` and to the tier rosters in `lib/plans.mjs` that include it.
+- **Pool:** a model outside the `standard` pool is `scarceQuota`. Add a new pool to `POOLS` and `SCARCE_POOL` in `hooks/_catalog.mjs`, and set the
+  tier's `subCaps` in `lib/plans.mjs`. A cross-hosted model goes in the
   hosting tier's `cross` list.
 - **Tier:** add it in `claudeTiers`, `codexTiers` or `antigravityTiers` with its models, builder count,
   warning and, for Claude, parent default and options. Add the id to the tier dropdown in
   `.github/ISSUE_TEMPLATE/bug_report.yml`.
 - **Ladders:** they are resolved from `PREFERENCE`. Native standard models come first; scarce and
   cross-hosted entries are overflow and stay last.
-- **Retiring a model:** add it to `RETIRED_MODELS` in `hooks/_shared.mjs` and remove it from every
+- **Retiring a model:** add it to `RETIRED_MODELS` in `hooks/_catalog.mjs` and remove it from every
   list, including `PARENTS`. A retired id must never appear in the catalog. A pattern ending in `-*` covers all variants.
 - **Defaults:** if the model belongs to the v1 preset roster, update `DEFAULTS` in
   `hooks/_shared.mjs` and `presets/*.json` together. A new model name prefix also needs

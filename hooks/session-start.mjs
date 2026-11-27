@@ -2,7 +2,7 @@
 import path from 'node:path';
 import { prune, readCooldowns, summarize, writeCooldowns } from './_quota.mjs';
 import {
-  AVAILABILITY_FILE, COOLDOWN_FILE, PROVIDER_ALIASES, configDirOf, loadConfig, readAvailability, warn,
+  AVAILABILITY_FILE, COOLDOWN_FILE, PROVIDER_ALIASES, configDirOf, isSupportedSchema, loadConfig, readAvailability, warn,
 } from './_shared.mjs';
 
 const HOUR = 60 * 60_000;
@@ -21,7 +21,7 @@ const configDir = configDirOf(import.meta.url);
 
 section('subscriptions', () => {
   const config = loadConfig(configDir);
-  if (config.schemaVersion !== 2) {
+  if (!isSupportedSchema(config)) {
     lines.push('AUTO-BUILD: legacy v1 config: run t3-auto-build upgrade');
     return;
   }

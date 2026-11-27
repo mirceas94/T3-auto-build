@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
-  AVAILABILITY_FILE, CONFIG_FILE, DEFAULTS, RETIRED_MODELS, SCHEMA_VERSION, canonicalProvider, fastModeRequested, isV2,
-  loadConfig, matchRetired, payloadProblem, readAvailability, resolveTarget, restrictedBy,
+  AVAILABILITY_FILE, CONFIG_FILE, DEFAULTS, RETIRED_MODELS, SCHEMA_VERSION, canonicalProvider, fastModeRequested,
+  isSupportedSchema, isV2, isV3, loadConfig, matchRetired, payloadProblem, readAvailability, resolveTarget, restrictedBy,
 } from '../hooks/_shared.mjs';
 import { sandbox, write } from './helpers.mjs';
 
@@ -84,6 +84,15 @@ test('fastModeRequested scans keys and option pairs to a fixed depth', () => {
   assert.equal(fastModeRequested(nest(7)), false);
 });
 
+test('schema helpers accept exactly versions 2 and 3', () => {
+  assert.equal(SCHEMA_VERSION, 3);
+  const check = (schemaVersion) => [isV2, isV3, isSupportedSchema].map((is) => is({ schemaVersion }));
+  assert.deepEqual(check(2), [true, false, true]);
+  assert.deepEqual(check(3), [false, true, true]);
+  for (const other of [undefined, 1, 4, '2', '3', null]) assert.deepEqual(check(other), [false, false, false], String(other));
+  for (const raw of [null, undefined, {}]) assert.equal(isSupportedSchema(raw), false);
+});
+
 describe('loadConfig', () => {
   const load = (t, content) => {
     const box = sandbox(t);
@@ -109,7 +118,7 @@ describe('loadConfig', () => {
 
   test('a valid v2 file; retired models only grow and both ban lists apply', (t) => {
     const v2 = {
-      schemaVersion: SCHEMA_VERSION, allowlist: { Codex: ['gpt-6-luna'] }, planRestrictedModels: ['codex:gpt-6-astra'],
+      schemaVersion: 2, allowlist: { Codex: ['gpt-6-luna'] }, planRestrictedModels: ['codex:gpt-6-astra'],
       models: [{ provider: 'codex', model: 'gpt-6-luna' }], allowFastModes: true, subscriptions: { codex: 'plus' },
       maxParallelBuilders: 3,
     };
@@ -118,6 +127,19 @@ describe('loadConfig', () => {
     assert.equal(stderr, '');
     assert.ok(isV2(v2));
     assert.deepEqual(load(t, { schemaVersion: 2, retiredModels: [] }).config.retiredModels, [...RETIRED_MODELS]);
+  });
+
+  test('v3 keys are kept for v3 only; invalid ones are dropped', (t) => {
+    const keys = { telemetry: { enabled: false, maxBytes: 10 }, preflight: { ttl: 5 }, catalogOverrides: false };
+    const v3 = load(t, { schemaVersion: 3, ...keys });
+    assert.equal(v3.config.schemaVersion, 3);
+    for (const [key, value] of Object.entries(keys)) assert.deepEqual(v3.config[key], value, key);
+    assert.equal(v3.stderr, '');
+    const v2 = load(t, { schemaVersion: 2, ...keys });
+    for (const key of Object.keys(keys)) assert.ok(!(key in v2.config), key);
+    const bad = load(t, { schemaVersion: 3, telemetry: { enabled: 'yes' }, preflight: { ttl: -1 }, catalogOverrides: 'no' });
+    for (const key of Object.keys(keys)) assert.ok(!(key in bad.config), key);
+    assert.equal(bad.stderr.match(/invalid "/g).length, 3);
   });
 
   test('invalid v2 keys fall back one by one', (t) => {
@@ -132,7 +154,7 @@ describe('loadConfig', () => {
   });
 
   test('unknown schemaVersion or a malformed file fails closed to DEFAULTS', (t) => {
-    for (const schemaVersion of [3, '2', 1, null]) {
+    for (const schemaVersion of [4, '3', '2', 1, null]) {
       const { config, stderr } = load(t, { schemaVersion, preset: 'claude-only', allowlist: { Any: ['gpt-4'] } });
       assert.deepEqual(config, fallback, String(schemaVersion));
       assert.match(stderr, /schemaVersion.*defaults/);
