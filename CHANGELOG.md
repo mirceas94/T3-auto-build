@@ -11,7 +11,9 @@ All notable changes to this project are documented here. The format follows
 - Skill template (`skills/auto-build/SKILL.md.tmpl`): builder rules (reuse existing code and the standard library, no speculative abstractions, list assumptions), terse sub-agent replies, a `Not checked:` line in the final report, and optional Context7 verification of third-party library APIs.
 - Core rules (`core/CLAUDE.md`): state assumptions and tradeoffs, reuse before adding code, simplest design.
 - Installed version: `init` and `upgrade` record the package version in the manifest, and `doctor` prints it (warning when it differs from the running CLI).
-- Documentation (`README.md`): Context7 note under Optional tools; how to update an existing install; CLI examples updated to `2.3.0`.
+- Catalog & tiers (`lib/plans.mjs`): added `gpt-6.2-sol` (standard) and `gpt-6.2-astra` (scarce `astra` pool) to paid Codex tiers (`plus`, `pro-100`, `pro-200`, `pro-500`, `business`, `api`), and added `claude-fable-5-2` (scarce `fable` pool + `--parent fable`) to Claude `max`.
+- Documentation (`README.md`): Context7 note under Optional tools; how to update an existing install; how to adopt newly released models; grouped Table of Contents; CLI examples and tier tables updated for `2.3.0`.
+- GitHub workflows & templates (`.github/`): hardened `publish.yml` OIDC `id-token: write` scope, release-tag verification, and `package-manager-cache: false`; added tailored issue templates for model/tier updates, hook guard false positives, and documentation improvements.
 
 ## [2.2.0] - 2026-11-27
 
