@@ -308,7 +308,32 @@ configured native models the adapter did not list.
 
 `--apply` reads the availability cache and replaces a configured model with a newer version of the
 same family, keeping its pool and ladder position, then backs up the config and re-renders
-`SKILL.md`. It needs an `auto-build` or `full` install.
+`SKILL.md` (and any mirrored copies). It needs an `auto-build` or `full` install.
+
+### Adopting newly released models
+
+Newly released models (for example, `claude-opus-5-6` or `claude-sonnet-5-6`) are **never**
+enabled automatically — [`pre-tool-use.mjs`](#hooks) enforces the allowlist in
+`auto-build.config.json` until you opt in. Choose any of three ways to adopt them:
+
+1. **Same-family drift promotion (with a `discovery` adapter):** Configure a `discovery` script
+   above, then run `t3-auto-build check-models`, preview with
+   `t3-auto-build sync-models --apply --dry-run`, and apply with `t3-auto-build sync-models --apply`.
+   Same-family upgrades are promoted in place; brand-new model families stay disabled until you add
+   them manually.
+2. **Manual edit (immediate, without waiting for a `t3-auto-build` release):** Edit
+   `<config dir>/auto-build.config.json` to update `models`, `allowlist`, `ladders`, and
+   `defaultModel`, then re-render `SKILL.md` and all provider mirrors:
+
+   ```sh
+   t3-auto-build init --yes
+   ```
+
+3. **After a `t3-auto-build` catalog update:** New installs pick up the updated default roster from
+   `lib/plans.mjs` automatically. On an existing v2 config, re-running `init` with the *same* tiers
+   intentionally preserves your current `models`, `allowlist`, and `ladders` so custom edits are
+   never overwritten; to rebuild from the latest catalog, remove (or back up)
+   `auto-build.config.json` and re-run `init` with your tier flags.
 
 ## Model bans
 
