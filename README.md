@@ -21,7 +21,7 @@ Type `$auto-build <task>` in T3 Code to plan, build, test, and review a coding t
 | **User Guide** | [What you need](#what-you-need) · [Install](#install) · [Your first run](#your-first-run) · [Everyday flags](#everyday-flags) · [FAQ & troubleshooting](#faq--troubleshooting) |
 | **Advanced Reference** | [Why & architecture highlights](#advanced-reference) · [Subscription tiers](#subscription-tiers) · [Parent model](#parent-model) · [Cross-hosted overflow](#cross-hosted-overflow) · [Availability checks](#availability-checks) · [Lock rechecks](#lock-rechecks) · [Model drift](#model-drift-safe-by-default) · [Adopting newly released models](#adopting-newly-released-models) · [Catalog overrides](#catalog-overrides) · [Model bans](#model-bans) · [Speed-mode guard](#speed-mode-guard) · [Legacy presets](#legacy-presets) · [Upgrading](#upgrading) · [Migrating from v1](#migrating-from-v1) |
 | **Workflow & CLI** | [auto-build workflow](#auto-build-workflow) · [Starting model](#starting-model) · [CLI](#cli) · [Preflight](#preflight) · [Reference text](#reference-text) · [Run ledger](#run-ledger-and-stats) · [doctor --fix](#doctor---fix) · [Modules](#modules) · [sync-models](#sync-models) · [Quota](#quota) · [Quota readers and pace](#quota-readers-and-pace) · [Cooldown file](#cooldown-file) |
-| **Config, Hooks & Ops** | [Configuration](#configuration) · [What `init` touches](#what-init-touches) · [Hooks](#hooks) · [Known limits](#known-limits) · [Security and privacy](#security-and-privacy) · [Troubleshooting & common gotchas](#troubleshooting--common-gotchas) · [Optional tools](#optional-tools) · [Development](#development) · [Project structure](#project-structure) · [License](#license) |
+| **Config, Hooks & Ops** | [Configuration](#configuration) · [What `init` touches](#what-init-touches) · [Hooks](#hooks) · [Known limits](#known-limits) · [Security and privacy](#security-and-privacy) · [Troubleshooting & common gotchas](#troubleshooting--common-gotchas) · [Optional tools](#optional-tools) · [Development](#development) · [Project structure](#project-structure) · [Credits](#credits) · [License](#license) |
 
 ## What you need
 
@@ -431,16 +431,32 @@ flowchart TD
    [parent model's](#parent-model) weekly quota is known and under 20%, `preflight` adds a warning
    suggesting `--budget` (without changing the parent; `quota.claudeUsage: false` turns Claude quota off).
    Without the CLI on `PATH`, the skill reads the availability and cooldown files directly.
-2. **Triage:** write a short `REPO_BRIEF` (using the cached `.claude/repo-profile.md`) and pick the
-   level `L0` to `L3` and work shape `A` (multi-file, UI) or `B` (algorithms, debugging).
+2. **Triage:** write a short `REPO_BRIEF` (using the cached `.claude/repo-profile.md`) that names
+   the top callers of changed interfaces and marks the rest `unverified`, then pick the level `L0` to
+   `L3` and work shape `A` (multi-file, UI) or `B` (algorithms, debugging). `L3` covers auth, security,
+   payments, databases, concurrency and crypto, plus changes to untrusted-input parsing, filesystem
+   path resolution, outbound network calls or secret handling.
 3. **Plan** (`L2`/`L3`), cross-checked by another provider on `L3` when available.
 4. **Build:** `L2`/`L3` run in file-disjoint waves: foundations, core, tests/docs. Builders in a wave
    run in parallel, at most `maxParallelBuilders` at once; the diff guard and exit checks pass before
    the next wave.
-5. **Verify:** blind edge-case tests (`L2`/`L3`), tests and lint, a diff-only audit preferring
-   another provider (two auditors on `L3`; any auditor's reproduced `BLOCKER` vetoes approval), at
-   most 2 fix rounds (then only a traced, re-verified orchestrator patch of 10 lines or fewer, else
-   stop), then an optional commit and a report.
+5. **Verify:** blind edge-case tests (`L2`/`L3`), tests and lint, an audit of the task and the diff
+   preferring another provider (two auditors on `L3`; any auditor's reproduced `BLOCKER` vetoes
+   approval), at most 2 fix rounds (then only a traced, re-verified orchestrator patch of 10 lines or
+   fewer, else stop), then an optional commit and a report.
+
+Delegates follow short role rules from `<config dir>/auto-build-rules.md`, installed by `init` and
+`upgrade`, refreshed by `sync-models` when it re-renders the skill (same text as [`ref rules`](#reference-text), so it works without the CLI on `PATH`):
+
+- **Auditor:** reports missing, unrequested or wrongly built behavior against the task, and treats
+  builder claims as unverified. Anything it cannot settle is marked `UNVERIFIED`, which the
+  orchestrator checks before accepting approval (still unsettled items go under `Not checked:`).
+- **Fixer:** shows one command failing on the exact symptom before editing, then passing (or says why
+  no command can).
+- **Tester:** takes expected values from the task, spec or a worked example, not from the code's logic.
+- **All delegates:** start no subagents of their own.
+
+State and resuming:
 
 - **Resumable state:** Runs that edit code (plus `--plan-only` runs) save
   `.claude/auto-build-state.json` (`flags`, `completedWaves`, `modifiedFiles`, `remaining`,
@@ -618,8 +634,10 @@ t3-auto-build ref cooldowns
 ```
 
 Topics are `flags` (inline run flags), `cooldowns` (lock keys and the canary recheck), `state` (resume
-file and ledger), `rules` (handoff isolation, contract freeze, fix-round limit, audit veto, parent quota) and
-`all`, filled in with your paths and models.
+file and ledger), `rules` (handoff isolation, contract freeze, fix-round limit, audit veto, parent
+quota, unverified items, delegate role rules) and
+`all`, filled in with your paths and models. `init` and `upgrade` also install the `rules` text as
+`<config dir>/auto-build-rules.md`, which the skill reads directly.
 
 ### Run ledger and stats
 
@@ -646,6 +664,7 @@ t3-auto-build doctor --fix --yes   # apply, then check
 | Repairs | Backup |
 |---|---|
 | Missing or differing hook files, and their manifest hashes | A changed hook is copied to `.bak`. **Your hook edits are replaced.** |
+| Missing or differing `auto-build-rules.md`, and its manifest hash | A changed file is copied to `.bak`. **Your edits are replaced.** |
 | Missing or differing `SKILL.md` mirrors | A changed mirror is copied to `.bak`. |
 | `auto-build-runtime.json` (v3) | Generated file, no backup. |
 | `.claude/auto-build-state.json` entry in the project's git `info/exclude` | Appended only. |
@@ -914,7 +933,7 @@ A v1 config has no `schemaVersion` and may also use `tiers` and `planRestricted`
 
 - **Managed files** (in `<config dir>`):
   - **Core (`full`, `core`):** `CLAUDE.md`, `rules/code-quality.md`, `commands/fix.md`, `commands/review.md`, `commands/handover.md`.
-  - **Auto-build (`full`, `auto-build`):** `skills/auto-build/SKILL.md`, `auto-build.config.json`, `hooks/t3-auto-build/{session-start,pre-compact,pre-tool-use,post-tool-use,_shared,_quota,_catalog}.mjs`, `settings.json`, and mirrored `auto-build/SKILL.md` copies in active `--skill-targets` roots.
+  - **Auto-build (`full`, `auto-build`):** `skills/auto-build/SKILL.md`, `auto-build-rules.md` (the `ref rules` text, so the skill reads it without the CLI on `PATH`), `auto-build.config.json`, `hooks/t3-auto-build/{session-start,pre-compact,pre-tool-use,post-tool-use,_shared,_quota,_catalog}.mjs`, `settings.json`, and mirrored `auto-build/SKILL.md` copies in active `--skill-targets` roots.
   - **Manifest (all modules):** `t3-auto-build.manifest.json`.
 - **Generated, not in the manifest:** `auto-build-runtime.json` (v3), the availability cache, the quota
   cache (`auto-build-quota.json`) and the run ledger. `uninstall` keeps the ledger.
@@ -1078,6 +1097,14 @@ Remove-Item -Recurse -Force $tmp
 | `lib/preflight.mjs`, `lib/ref.mjs`, `lib/telemetry.mjs` | `preflight`, `ref`, `trace record` and `stats`. |
 | `lib/doctor.mjs`, `lib/mirrors.mjs`, `lib/probe.mjs`, `lib/settings.mjs`, `lib/manifest.mjs`, `lib/detect.mjs`, `lib/paths.mjs`, `lib/prompt.mjs` | Diagnostics/repair, skill mirroring, model probing, `settings.json` merging, manifest, provider detection, path safety and prompts. |
 | `core/`, `skills/`, `presets/` | Installed instructions, skill template and legacy presets. |
+
+## Credits
+
+Some of the audit, testing, debugging and triage rules in `$auto-build` are inspired by
+[superpowers](https://github.com/obra/superpowers) by Jesse Vincent,
+[mattpocock/skills](https://github.com/mattpocock/skills) by Matt Pocock and
+[ECC](https://github.com/affaan-m/ECC) by Affaan Mustafa (all MIT). The wording is our own, and
+`t3-auto-build` does not require any of them.
 
 ## License
 

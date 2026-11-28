@@ -95,6 +95,19 @@ test('doctor --fix restores missing files', (t) => {
   for (const file of [box.mirror, box.path(SNAPSHOT)]) assert.ok(fs.existsSync(file), file);
 });
 
+test('doctor --fix restores a missing or edited rules file, backing up the edit', (t) => {
+  const box = setup(t);
+  const file = box.path('auto-build-rules.md');
+  const rules = read(file);
+  fs.rmSync(file);
+  assert.equal(box.doctor('--fix', '--yes').status, 0);
+  assert.equal(read(file), rules);
+  write(file, 'edited');
+  assert.equal(box.doctor('--fix', '--yes').status, 0);
+  assert.equal(read(file), rules);
+  assert.equal(read(`${file}.bak`), 'edited');
+});
+
 test('doctor without --fix writes nothing; --yes alone is refused', (t) => {
   const box = setup(t);
   drift(box);

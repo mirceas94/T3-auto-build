@@ -9,6 +9,7 @@ import { PRESETS, loadPreset, moduleFiles } from '../lib/install.mjs';
 import { MODULES, hashOf } from '../lib/manifest.mjs';
 import { safePath } from '../lib/paths.mjs';
 import { promptOptions } from '../lib/prompt.mjs';
+import { RULES, RULES_FILE } from '../lib/ref.mjs';
 import { LADDERS, fillTemplate } from '../lib/render.mjs';
 import { json, read, sandbox, tree, write } from './helpers.mjs';
 
@@ -58,6 +59,10 @@ for (const preset of PRESETS) {
         const count = Object.values(loadPreset(preset).allowlist).flat().length;
         assert.match(skill, new RegExp(`Strict ${count}-Model Allowlist`));
         assert.ok(skill.includes(`${box.target.replace(/\\/g, '/')}/auto-build-cooldowns.json`));
+        // The skill points at the installed rules file, which works without the CLI on PATH.
+        assert.equal(read(box.path(RULES_FILE)), `${RULES}
+`);
+        assert.ok(skill.includes(`${box.target.replace(/\\/g, '/')}/${RULES_FILE}`));
         if (preset === 'claude-only') assert.doesNotMatch(skill, /gpt-|Gemini/);
         if (preset === 'claude-codex') assert.doesNotMatch(skill, /Gemini/);
         assert.equal(ours(json(box.path('settings.json'))).length, 4);

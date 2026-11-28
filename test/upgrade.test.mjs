@@ -3,10 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
 import { RETIRED_MODELS } from '../hooks/_shared.mjs';
-import { install, uninstall, upgrade } from '../lib/install.mjs';
+import { install, syncConfig, uninstall, upgrade } from '../lib/install.mjs';
 import { CliError } from '../lib/paths.mjs';
 import { resolveTiers } from '../lib/plans.mjs';
 import { summaryTable } from '../lib/prompt.mjs';
+import { RULES, RULES_FILE } from '../lib/ref.mjs';
 import { json, read, sandbox, tree, write } from './helpers.mjs';
 
 const CONFIG = 'auto-build.config.json';
@@ -115,6 +116,36 @@ test('upgrade converts a v1 config once, with a backup and a re-rendered skill',
   const after = tree(box.target);
   assert.equal(upgrade(box.target, quiet).upgraded, false);
   assert.deepEqual(tree(box.target), after);
+});
+
+test('upgrade installs the rules file an older install does not have', (t) => {
+  const box = sandbox(t);
+  run(box.target, {});
+  const manifestPath = box.path('t3-auto-build.manifest.json');
+  const manifest = json(manifestPath);
+  delete manifest.files[RULES_FILE];
+  write(manifestPath, manifest);
+  fs.rmSync(box.path(RULES_FILE));
+
+  assert.equal(upgrade(box.target, quiet).upgraded, true);
+  assert.equal(read(box.path(RULES_FILE)), `${RULES}
+`);
+  assert.ok(Object.hasOwn(json(manifestPath).files, RULES_FILE));
+});
+
+test('syncConfig installs the rules file the re-rendered skill points to', async (t) => {
+  const box = sandbox(t);
+  run(box.target, {});
+  const manifestPath = box.path('t3-auto-build.manifest.json');
+  const manifest = json(manifestPath);
+  delete manifest.files[RULES_FILE];
+  write(manifestPath, manifest);
+  fs.rmSync(box.path(RULES_FILE));
+
+  await syncConfig(box.target, json(box.path(CONFIG)), quiet);
+  assert.equal(read(box.path(RULES_FILE)), `${RULES}
+`);
+  assert.ok(Object.hasOwn(json(manifestPath).files, RULES_FILE));
 });
 
 test('upgrade keeps hand-edited managed files and refuses configs it cannot read', (t) => {

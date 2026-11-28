@@ -72,17 +72,31 @@ test('orchestration rules are in the skill and detailed in ref rules', (t) => {
   const skill = renderSkill(template, v2, box.target);
   const rules = getReference('rules', { configDir: box.target });
   for (const [inSkill, inRef] of [
-    [/every Handoff Packet:.*isolation rules \(`t3-auto-build ref rules`\)/, /repo-profile\.md\. Every Handoff Packet \(builder, tester, auditor, architect\) includes them\./],
+    [/every Handoff Packet:.*role\+isolation rules \([^)]*\/auto-build-rules\.md\)/, /repo-profile\.md\. Every Handoff Packet \(builder, tester, auditor, architect\) includes them\./],
     [/test\/lint, conventions, isolation/, /Triage records/],
     [/shared: wave 1; parallel builders change them only if you decide/, /only the orchestrator decides/],
     [/never silently self-edit \(except Step 6 micro-patch\)/, /at most 10 lines/],
     [/After R2: your <=10-line micro-patch only if logged in Model Trace \+ Step 5 re-verified; else save state, stop/, /save state and stop/],
-    [/Any auditor's reproduced BLOCKER vetoes APPROVED \(no majority\/override\)/, /vetoes APPROVED/],
+    [/Any auditor's reproduced BLOCKER vetoes APPROVED \(no majority\/override\)/, /vetoes APPROVED.*For an unmet requirement, reproduced means the quote is in the task and the diff does not meet it\./],
     [/Auditors get Step 4 tests\+results/, /Step 4 Tester stays blind/],
+    [/signatures\/role\+isolation rules; no production edits/, /Tester: take expected values/],
+    [/Triage \(Tier 1 low; give it rules file\)/, /every Handoff Packet, and the Triage prompt, also carries the lines below that name its role/],
+    [/Send the task, only run's `git diff -U5`/, /Auditor: check the task as given.*missing, unrequested or wrongly built/],
+    [/or quoted unmet requirement/, /unmet or wrongly built requirement is a BLOCKER: quote it/],
+    [/Resolve `UNVERIFIED:` \(rules file\) before accepting APPROVED/, /Still unsettled: list it under `Not checked:`/],
+    [/interfaces\+callers/, /marks the rest `unverified`/],
+    [/crypto \+ rules-file triggers/, /also L3: changes to untrusted-input parsing, filesystem path resolution, outbound network calls or secret handling/],
   ]) {
     assert.match(skill, inSkill);
     assert.match(rules, inRef);
   }
+  for (const delegateRule of [
+    /Builder: reuse code\/stdlib, no speculative abstractions.*`COMMIT_MSG:`/,
+    /Fixer \(whoever edits in Step 6, R1 Builder or R2 Architect; plus the Builder line\): before editing, run one command that fails on the exact symptom/,
+    /Tester: take expected values from the task.*never recompute them/,
+    /Builder claims and justifications are unverified/,
+    /start no subagents or reviewers/,
+  ]) assert.match(rules, delegateRule);
   assert.match(rules, /config\.quota\.claudeUsage/);
 });
 
