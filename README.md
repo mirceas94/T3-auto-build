@@ -446,7 +446,7 @@ flowchart TD
    fewer, else stop), then an optional commit and a report.
 
 Delegates follow short role rules from `<config dir>/auto-build-rules.md`, installed by `init` and
-`upgrade`, refreshed by `sync-models` when it re-renders the skill (same text as [`ref rules`](#reference-text), so it works without the CLI on `PATH`):
+`upgrade`, refreshed by `sync-models` when it re-renders the skill unless you edited it (same text as [`ref rules`](#reference-text), so it works without the CLI on `PATH`):
 
 - **Auditor:** reports missing, unrequested or wrongly built behavior against the task, and treats
   builder claims as unverified. Anything it cannot settle is marked `UNVERIFIED`, which the

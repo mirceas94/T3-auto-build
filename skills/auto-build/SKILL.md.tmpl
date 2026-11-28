@@ -28,8 +28,8 @@ Architect (Tier 3): {{architect}}
 Dual Audit (security+architecture): {{dualAuditRun}}
 
 ## Cooldowns {{cooldownsPath}}
-`t3-auto-build ref cooldowns`; locks bind except recheck-via-t3.
-1. Plan error: no cooldown; `t3-auto-build availability mark <provider:model> plan-restricted --ttl 24h`; advise `t3-auto-build sync-models`.
+`ref cooldowns`; locks bind except recheck-via-t3.
+1. Plan error: no cooldown; `t3-auto-build availability mark <provider:model> plan-restricted --ttl 24h`; advise `sync-models`.
 2. Quota error: `t3-auto-build quota check <provider:model> --on-error`. `retry`: once; `failover` or repeat: fail over. Unlocked longer limit: `quota set` per ref.
 3. Fail over down ladder; trace. Exhausted: save state, stop, report reset (--resume).
 
@@ -37,7 +37,7 @@ Dual Audit (security+architecture): {{dualAuditRun}}
 0 `t3-auto-build preflight --json --flags "<active flags>"` (runs `t3-auto-build check-models`); obey it.
 No CLI: skip locked/unavailable per {{availabilityPath}} + cooldowns; `git status --short`.
 --strict sans --budget: warn if {{dualAuditNames}} all locked.
-State .claude/auto-build-state.json (`t3-auto-build ref state`, gitignored): save per wave; --resume (invalid: stop).
+State .claude/auto-build-state.json (`ref state`, gitignored): save per wave; --resume (invalid: stop).
 
 1 Triage (Tier 1 low; give it rules file): cache .claude/repo-profile.md (test/lint, conventions, isolation). REPO_BRIEF: files+lines, interfaces+callers, commands, level, shape. L0 1 file <20 lines (copy/CSS/rename), no logic/security risk; L1 contained; L2 multi-file; L3 auth/security/payments/DB/concurrency/crypto + rules-file triggers.
     - `Shape A` Builder: `{{firstBuilderA}}`
@@ -55,4 +55,4 @@ Pass brief; every Handoff Packet: owned files, files to read, contract, exit che
 
 6 Fix failures/BLOCKERs, max 2 rounds: R1 Builder (brief, diff, blockers, failures): medium (L3 high, budget low, one-liner Tier 1). R2/repeated error/regression: Architect high (budget Tier 2 medium) root-causes first. Rerun 3.5+5. After R2: your <=10-line micro-patch only if logged in Model Trace + Step 5 re-verified; else save state, stop.
 
-7 --commit only if tests+audit pass: run files, COMMIT_MSG, no --no-verify/amend. Optional `t3-auto-build trace record` (ref state). Report: level/shape/flags, files/commit, tests, verdict+NITs, Model Trace (step, provider, model, effort, locks, failovers), `Not checked:` + assumptions.
+7 --commit only if tests+audit pass: run files, COMMIT_MSG, no --no-verify/amend. Optional `trace record` (ref state). Report: level/shape/flags, files/commit, tests, verdict+NITs, Model Trace (step, provider, model, effort, locks, failovers), `Not checked:` + assumptions.

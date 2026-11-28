@@ -50,10 +50,11 @@ function drift(box) {
 test('doctor --fix without --yes only reports', (t) => {
   const box = setup(t);
   drift(box);
+  write(box.path('auto-build-rules.md'), 'edited');
   const before = tree(box.dir);
   const result = box.doctor('--fix');
   assert.match(result.stdout, /^would fix: .*re-run with --fix --yes/m);
-  for (const part of ['hook hooks/t3-auto-build/pre-tool-use.mjs', 'skill mirror ', SNAPSHOT]) {
+  for (const part of ['hook hooks/t3-auto-build/pre-tool-use.mjs', 'rules file auto-build-rules.md', 'skill mirror ', SNAPSHOT]) {
     assert.ok(result.stdout.includes(part), part);
   }
   if (GIT) assert.ok(result.stdout.includes(`git exclude ${EXCLUDE}`), result.stdout);

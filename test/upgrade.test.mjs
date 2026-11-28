@@ -133,6 +133,26 @@ test('upgrade installs the rules file an older install does not have', (t) => {
   assert.ok(Object.hasOwn(json(manifestPath).files, RULES_FILE));
 });
 
+test('upgrade on a v3 install only adds a missing rules file', (t) => {
+  const box = sandbox(t);
+  install(box.target, { skillTargets: 'none', claudeTier: 'pro' }, () => {});
+  const manifestPath = box.path('t3-auto-build.manifest.json');
+  const manifest = json(manifestPath);
+  delete manifest.files[RULES_FILE];
+  write(manifestPath, manifest);
+  fs.rmSync(box.path(RULES_FILE));
+  const config = read(box.path(CONFIG));
+
+  assert.equal(upgrade(box.target, quiet).upgraded, false);
+  assert.equal(read(box.path(RULES_FILE)), `${RULES}
+`);
+  assert.ok(Object.hasOwn(json(manifestPath).files, RULES_FILE));
+  assert.equal(read(box.path(CONFIG)), config);
+  const after = tree(box.target);
+  upgrade(box.target, quiet);
+  assert.deepEqual(tree(box.target), after);
+});
+
 test('syncConfig installs the rules file the re-rendered skill points to', async (t) => {
   const box = sandbox(t);
   run(box.target, {});
