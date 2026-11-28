@@ -237,7 +237,7 @@ test('codex JSON-RPC reader handles 300/10080/43200 windows, null secondary, ast
     assert.deepEqual(Object.keys(w).sort(), ['pool', 'provider', 'remainingPct', 'resetsAt', 'windowMinutes']);
   }
   assert.equal(JSON.stringify(res).includes('acct_secret_123'), false);
-  assert.equal(JSON.stringify(res).includes('noreply.github.com'), false);
+  assert.doesNotMatch(JSON.stringify(res), /noreply/);
 
   // Timeout / RPC failure returns unknown.
   const timedOut = await readProviderQuota('codex', {
