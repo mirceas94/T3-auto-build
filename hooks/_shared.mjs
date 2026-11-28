@@ -1,5 +1,6 @@
 // Shared by the installed hooks (and reused by the installer). Node >=18, node:* only.
 import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,9 +18,17 @@ export {
 export const CONFIG_FILE = 'auto-build.config.json';
 export const COOLDOWN_FILE = 'auto-build-cooldowns.json';
 export const AVAILABILITY_FILE = 'auto-build-availability.json';
+export const QUOTA_FILE = 'auto-build-quota.json';
 export const RUNTIME_SNAPSHOT_FILE = 'auto-build-runtime.json';
 export const LEDGER_FILE = 'auto-build-ledger.jsonl';
 export const SCHEMA_VERSION = 3;
+
+export const QUOTA_DEFAULTS = Object.freeze({
+  minRemainingPct: 3,
+  ttlMs: 300_000,
+  claudeUsage: false,
+  burstLockMs: 300_000,
+});
 
 export const DEFAULTS = {
   allowlist: {
@@ -35,8 +44,267 @@ export const warn = (message) => process.stderr.write(`t3-auto-build: ${message}
 export const isAllowlist = (v) =>
   isObject(v) && Object.values(v).every(isStringList) && Object.values(v).flat().length > 0;
 
+const WAIT_ARRAY = new Int32Array(new SharedArrayBuffer(4));
+const BUSY_CODES = new Set(['EBUSY', 'EPERM', 'EACCES']);
+
+const sleepSync = (ms) => {
+  if (ms > 0) Atomics.wait(WAIT_ARRAY, 0, 0, ms);
+};
+
+/** Retries transient Windows file-busy errors (scanners, concurrent readers/writers). */
+export function retryBusy(action, { attempts = 6, delayMs = 25 } = {}) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return action();
+    } catch (error) {
+      if (attempt >= attempts || !BUSY_CODES.has(error?.code)) throw error;
+      sleepSync(delayMs);
+    }
+  }
+}
+
+/** Removes a file if present, retrying transient busy errors. */
+export const removeFile = (file) => retryBusy(() => fs.rmSync(file, { force: true }));
+
+/** Writes content via a unique sibling temp file and atomic rename (with retry and cleanup). */
+export function writeFileAtomic(file, content) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const temp = `${file}.${process.pid}.${Date.now()}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  let renamed = false;
+  try {
+    fs.writeFileSync(temp, content);
+    retryBusy(() => fs.renameSync(temp, file));
+    renamed = true;
+  } finally {
+    if (!renamed) {
+      try {
+        fs.rmSync(temp, { force: true });
+      } catch {
+        // best-effort temp cleanup
+      }
+    }
+  }
+}
+
+const GUARD_STALE_MS = 5_000;
+
+export function lockError(message) {
+  const err = new Error(message);
+  err.code = 'ELOCKED';
+  return err;
+}
+
+const isRetryableOpen = (error) =>
+  error?.code === 'EEXIST' || error?.code === 'EISDIR'
+  || (process.platform === 'win32' && BUSY_CODES.has(error?.code));
+
+// shortcut: lstatRegular before openSync('wx') has a narrow TOCTOU window (Node exposes no O_NOFOLLOW create on Windows)
+function createExclusive(file, content) {
+  lstatRegular(file);
+  const fd = fs.openSync(file, 'wx');
+  let wrote = false;
+  try {
+    fs.writeSync(fd, content);
+    wrote = true;
+  } finally {
+    fs.closeSync(fd);
+    if (!wrote) {
+      try {
+        fs.unlinkSync(file);
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  }
+}
+
+function lstatRegular(file) {
+  const stat = fs.lstatSync(file, { throwIfNoEntry: false });
+  if (stat && !stat.isFile()) throw lockError(`lock path ${path.basename(file)} is not a regular file`);
+  return stat;
+}
+
+function readLockToken(file) {
+  try {
+    return retryBusy(() => fs.readFileSync(file, 'utf8'));
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+function unlinkLockFile(file) {
+  try {
+    retryBusy(() => fs.unlinkSync(file));
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+}
+
+/** Briefly serializes lock-file unlinks (stale reclaim and release) via an exclusive sibling `.guard` file (`wx`). */
+function withLockGuard(guardFile, action, { timeoutMs = 1000, staleMs = GUARD_STALE_MS, pollMs = 5 } = {}) {
+  const token = `${process.pid}:${crypto.randomBytes(8).toString('hex')}\n`;
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  const guardStaleMs = Math.min(Math.max(staleMs, 250), GUARD_STALE_MS);
+  const stepMs = Math.max(1, Math.min(pollMs, 10));
+  for (let attempt = 0; ; attempt += 1) {
+    if (attempt > 0 && Date.now() >= deadline) {
+      throw lockError(`timed out waiting for lock guard ${path.basename(guardFile)}`);
+    }
+    try {
+      createExclusive(guardFile, token);
+      break;
+    } catch (error) {
+      if (!isRetryableOpen(error)) throw error;
+      let stat;
+      try {
+        stat = lstatRegular(guardFile);
+      } catch (statError) {
+        if (statError?.code === 'ELOCKED') throw statError;
+        stat = undefined;
+      }
+      if (stat && Date.now() - stat.mtimeMs >= guardStaleMs) {
+        try {
+          unlinkLockFile(guardFile);
+        } catch {
+          // another contender or transient error; retry within deadline
+        }
+        continue;
+      }
+      if (!stat && error?.code === 'EEXIST') continue;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw lockError(`timed out waiting for lock guard ${path.basename(guardFile)}`);
+      sleepSync(Math.min(stepMs, remaining));
+    }
+  }
+  try {
+    return action();
+  } finally {
+    try {
+      const stat = fs.lstatSync(guardFile, { throwIfNoEntry: false });
+      if (stat?.isFile() && readLockToken(guardFile) === token) unlinkLockFile(guardFile);
+    } catch {
+      // best-effort guard cleanup
+    }
+  }
+}
+
+/**
+ * Serializes updates to `file` via an exclusive sibling `.lock` file (`wx`).
+ * `action` must be synchronous; async callbacks would release the lock before finishing.
+ * Recovers stale locks older than `staleMs` and never waits longer than `timeoutMs`.
+ */
+// shortcut: a holder past staleMs can overlap its reclaimer, and a guard abandoned by a crash is reclaimed by age; lock bodies are ms-scale sync RMW only
+export function withFileLock(file, action, { timeoutMs = 2000, staleMs = 10_000, pollMs = 25 } = {}) {
+  const lockFile = `${file}.lock`;
+  const guardFile = `${lockFile}.guard`;
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const token = `${process.pid}:${crypto.randomBytes(8).toString('hex')}\n`;
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  const releaseLock = () => {
+    const stat = fs.lstatSync(lockFile, { throwIfNoEntry: false });
+    if (!stat?.isFile()) return;
+    if (readLockToken(lockFile) === token) unlinkLockFile(lockFile);
+  };
+  for (let attempt = 0; ; attempt += 1) {
+    if (attempt > 0 && Date.now() >= deadline) {
+      throw lockError(`timed out waiting for lock ${path.basename(lockFile)}`);
+    }
+    lstatRegular(guardFile);
+    try {
+      createExclusive(lockFile, token);
+      break;
+    } catch (error) {
+      if (!isRetryableOpen(error)) throw error;
+      let stat;
+      try {
+        stat = lstatRegular(lockFile);
+      } catch (statError) {
+        if (statError?.code === 'ELOCKED') throw statError;
+        stat = undefined;
+      }
+      if (stat && Date.now() - stat.mtimeMs >= staleMs) {
+        let observed;
+        let readFailed = false;
+        try {
+          observed = readLockToken(lockFile);
+        } catch {
+          readFailed = true;
+        }
+        if (!readFailed) {
+          if (observed === null) continue;
+          let reclaimed = false;
+          try {
+            withLockGuard(guardFile, () => {
+              const currentStat = lstatRegular(lockFile);
+              if (!currentStat || Date.now() - currentStat.mtimeMs < staleMs) return;
+              if (readLockToken(lockFile) !== observed) return;
+              unlinkLockFile(lockFile);
+              reclaimed = true;
+            }, { timeoutMs: Math.max(0, deadline - Date.now()), staleMs, pollMs });
+          } catch (reclaimError) {
+            if (reclaimError?.code === 'ELOCKED') throw reclaimError;
+          }
+          if (reclaimed) continue;
+        }
+      } else if (!stat && error?.code === 'EEXIST') {
+        continue;
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        throw lockError(`timed out waiting for lock ${path.basename(lockFile)}`);
+      }
+      sleepSync(Math.min(pollMs, remaining));
+    }
+  }
+  try {
+    lstatRegular(guardFile);
+  } catch (error) {
+    try {
+      releaseLock();
+    } catch {
+      // best-effort cleanup when guard became non-regular during acquire
+    }
+    throw error;
+  }
+  const stillHeld = () => {
+    try {
+      const stat = fs.lstatSync(lockFile, { throwIfNoEntry: false });
+      return Boolean(stat?.isFile() && readLockToken(lockFile) === token);
+    } catch {
+      return false;
+    }
+  };
+  try {
+    return action(stillHeld);
+  } finally {
+    try {
+      const releaseTimeoutMs = Math.max(500, Math.min(timeoutMs, 2000));
+      withLockGuard(guardFile, releaseLock, { timeoutMs: releaseTimeoutMs, staleMs, pollMs });
+    } catch (releaseError) {
+      let released = false;
+      let brokenGuard = false;
+      try {
+        const guardStat = fs.lstatSync(guardFile, { throwIfNoEntry: false });
+        if (guardStat && !guardStat.isFile()) {
+          brokenGuard = true;
+          releaseLock();
+          released = true;
+        }
+      } catch {
+        // best-effort fallback lock cleanup
+      }
+      if (brokenGuard && released) {
+        warn(`lock guard ${path.basename(guardFile)} is not a regular file; released ${path.basename(lockFile)} without guard`);
+      } else if (!released) {
+        warn(`failed to release lock ${path.basename(lockFile)} (${releaseError?.message ?? releaseError})`);
+      }
+    }
+  }
+}
+
 export const parseJson = (text) => JSON.parse(text.replace(/^\uFEFF/, ''));
-export const readJson = (file) => parseJson(fs.readFileSync(file, 'utf8'));
+export const readJson = (file) => parseJson(retryBusy(() => fs.readFileSync(file, 'utf8')));
 
 /** Config dir of an installed hook: <configDir>/hooks/t3-auto-build/<hook>.mjs */
 export const configDirOf = (metaUrl) => path.resolve(path.dirname(fileURLToPath(metaUrl)), '..', '..');
@@ -55,12 +323,25 @@ export function cliModelId(provider, displayOrId, config) {
   return displayOrId.toLowerCase().replace(separator, '-').replace(/^-+|-+$/g, '');
 }
 
-/** Comparable forms of a model: date-stripped and normalized, plus its config.modelIds counterpart. */
+/** Comparable forms of a model: date-stripped and normalized, plus the transitive closure of config.modelIds. */
 export function modelKeys(model, config) {
   const key = (name) => normalizeName(normalizeModel(name));
   const keys = new Set([key(model)]);
-  for (const [name, id] of Object.entries(config?.modelIds ?? {})) {
-    if (typeof id === 'string' && (keys.has(key(name)) || keys.has(key(id)))) keys.add(key(name)).add(key(id));
+  const pairs = Object.entries(config?.modelIds ?? {})
+    .filter(([, id]) => typeof id === 'string')
+    .map(([name, id]) => [key(name), key(id)]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const [left, right] of pairs) {
+      if (keys.has(left) && !keys.has(right)) {
+        keys.add(right);
+        grew = true;
+      } else if (keys.has(right) && !keys.has(left)) {
+        keys.add(left);
+        grew = true;
+      }
+    }
   }
   return keys;
 }
@@ -89,16 +370,19 @@ export function resolveTarget({ providers = [], model } = {}, config) {
   const list = Array.isArray(providers) ? providers : [providers];
   const canon = [...new Set(list.map(canonicalProvider).filter(Boolean))];
   const name = typeof model === 'string' && model ? model : null;
-  const inferred = inferProvider(name);
+  const keys = name ? modelKeys(name, config) : new Set();
+  const inferred = name ? (inferProvider(name) ?? [...keys].map(inferProvider).find(Boolean) ?? null) : null;
   const declared = canon[0] ?? null;
-  const provider = declared ?? inferred;
-  let entry = null;
-  if (name && provider) {
-    const keys = modelKeys(name, config);
-    const models = Array.isArray(config?.models) ? config.models : [];
-    entry = models.find((item) => typeof item?.model === 'string' && canonicalProvider(item.provider) === provider
-      && [...modelKeys(item.model, config)].some((key) => keys.has(key))) ?? null;
-  }
+  const models = Array.isArray(config?.models) ? config.models : [];
+  const matched = name
+    ? models.filter((item) => typeof item?.model === 'string'
+      && [...modelKeys(item.model, config)].some((key) => keys.has(key)))
+    : [];
+  const matchedProviders = [...new Set(matched.map((item) => canonicalProvider(item.provider)).filter(Boolean))];
+  const provider = declared ?? inferred ?? (matchedProviders.length === 1 ? matchedProviders[0] : null);
+  const entry = provider
+    ? matched.find((item) => canonicalProvider(item.provider) === provider) ?? null
+    : null;
   let conflict = null;
   if (canon.length > 1) conflict = `conflicting providers: ${canon.join(', ')}`;
   else if (declared && !entry && inferred && declared !== inferred) {
@@ -110,27 +394,39 @@ export function resolveTarget({ providers = [], model } = {}, config) {
     entry,
     pool: entry?.pool ?? 'standard',
     scarceQuota: Boolean(entry?.scarceQuota),
-    crossHosted: provider !== inferred && Boolean(entry),
+    crossHosted: Boolean(inferred) && provider !== inferred && Boolean(entry),
     conflict,
   };
 }
 
-/** Banned entries match as substrings of the raw or normalized name; "A/B" bans both A and B. */
-export function isBanned(model, bannedModels) {
+/** Banned entries match as substrings of the raw or normalized name (and resolved aliases); "A/B" bans both A and B. */
+export function isBanned(model, bannedModels, config) {
   const name = model.toLowerCase();
-  const normalized = normalizeName(model);
+  const normalized = [normalizeName(model)];
+  for (const key of modelKeys(model, config)) {
+    if (!normalized.includes(key)) normalized.push(key);
+  }
+  const hasWord = (value) => /[\p{L}\p{N}]/u.test(value);
   return bannedModels
     .flatMap((entry) => entry.split('/'))
     .map((term) => term.trim().toLowerCase())
-    // A term with no letter or digit normalizes to "-" and would ban nearly everything, so it only matches raw.
-    .some((term) => term !== ''
-      && (name.includes(term) || (/[\p{L}\p{N}]/u.test(term) && normalized.includes(normalizeName(term)))));
+    // A term with no letter or digit normalizes to "-" (or "" after date-stripping) and would ban nearly everything.
+    .some((term) => {
+      if (term === '') return false;
+      if (name.includes(term)) return true;
+      const norm = normalizeName(term);
+      if (norm !== '' && hasWord(norm) && normalized.some((key) => key.includes(norm))) return true;
+      const stripped = normalizeModel(norm);
+      return stripped !== norm && stripped !== '' && hasWord(stripped)
+        && normalized.some((key) => key === stripped);
+    });
 }
 
 /** [provider, models] pairs with banned models removed. */
-export function effectiveAllowlist({ allowlist, bannedModels }) {
+export function effectiveAllowlist(config) {
+  const { allowlist, bannedModels } = config;
   return Object.entries(allowlist)
-    .map(([provider, models]) => [provider, models.filter((m) => !isBanned(m, bannedModels))])
+    .map(([provider, models]) => [provider, models.filter((m) => !isBanned(m, bannedModels, config))])
     .filter(([, models]) => models.length > 0);
 }
 
@@ -152,9 +448,15 @@ const isModelList = (v) => Array.isArray(v) && v.every((m) => isObject(m) && isS
   && (m.scarceQuota === undefined || typeof m.scarceQuota === 'boolean'));
 const isBoolean = (v) => typeof v === 'boolean';
 const isCount = (v) => Number.isInteger(v) && v >= 0;
+const isPositiveInt = (v) => Number.isInteger(v) && v > 0;
 const isTelemetry = (v) => isObject(v) && (v.enabled === undefined || isBoolean(v.enabled))
   && (v.maxBytes === undefined || isCount(v.maxBytes));
 const isPreflight = (v) => isObject(v) && (v.ttl === undefined || isCount(v.ttl));
+const isQuota = (v) => isObject(v)
+  && (v.minRemainingPct === undefined || (typeof v.minRemainingPct === 'number' && Number.isFinite(v.minRemainingPct) && v.minRemainingPct >= 0 && v.minRemainingPct <= 100))
+  && (v.ttlMs === undefined || isPositiveInt(v.ttlMs))
+  && (v.claudeUsage === undefined || isBoolean(v.claudeUsage))
+  && (v.burstLockMs === undefined || isCount(v.burstLockMs));
 const isToggle = (v) => isBoolean(v) || isObject(v);
 
 /**
@@ -191,7 +493,7 @@ export function loadConfig(configDir) {
     models: [],
     allowFastModes: false,
   };
-  const optional = [['tiers', isObject], ['modelIds', isObject]];
+  const optional = [['tiers', isObject], ['modelIds', isObject], ['quota', isQuota]];
   if (modern) {
     // Both ban lists apply.
     config.bannedModels = [...new Set([...config.bannedModels, ...pick('userBannedModels', isStringList, [])])];
@@ -219,16 +521,34 @@ export function loadConfig(configDir) {
   return config;
 }
 
-/** Hook payload from stdin; null when absent or unparsable (hooks fail open). */
-export async function readPayload() {
+export const MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
+
+/** Hook payload from stdin; null when absent or unparsable (hooks fail open unless throwOnLimit is set). */
+export async function readPayload({ maxBytes = MAX_PAYLOAD_BYTES, throwOnLimit = false } = {}) {
   if (process.stdin.isTTY) return null;
   try {
     const chunks = [];
-    for await (const chunk of process.stdin) chunks.push(chunk);
-    const text = Buffer.concat(chunks).toString('utf8').replace(/^\uFEFF/, '');
+    let total = 0;
+    for await (const chunk of process.stdin) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      total += buf.length;
+      if (total > maxBytes) {
+        process.stdin.destroy();
+        const err = new RangeError(`hook input exceeded ${maxBytes} bytes`);
+        err.code = 'EPAYLOAD_TOO_LARGE';
+        throw err;
+      }
+      chunks.push(buf);
+    }
+    const text = Buffer.concat(chunks, total).toString('utf8').replace(/^\uFEFF/, '');
     if (!text.trim()) return null;
     return JSON.parse(text);
   } catch (error) {
+    if (error?.code === 'EPAYLOAD_TOO_LARGE') {
+      if (throwOnLimit) throw error;
+      warn(`ignoring oversized hook input (> ${maxBytes} bytes)`);
+      return null;
+    }
     warn(`ignoring malformed hook input (${error.name})`);
     return null;
   }
@@ -341,7 +661,7 @@ export function which(name) {
 const CMD_SAFE = /^[\p{L}\p{M}\p{N} _.\-\\/:()[\]{}@+,=~#$']*$/u;
 
 /** The program an npm/pnpm .cmd shim launches, as argv, or null if it cannot be determined. */
-function shimTarget(shim) {
+export function shimTarget(shim) {
   try {
     const match = fs.readFileSync(shim, 'utf8').match(/"%(?:~dp0|dp0%)\\?([^"%]+)"[ \t]+%\*/);
     if (!match) return null;

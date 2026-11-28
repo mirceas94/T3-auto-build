@@ -116,13 +116,13 @@ test('getReference renders every topic with this installation\'s paths and model
   assert.match(text.state, /^## Run state/);
   assert.ok(text.state.includes(`${base}/${LEDGER_FILE}`));
   assert.ok(text.all.includes(`Config: \`${base}/auto-build.config.json\``));
-  for (const topic of ['flags', 'cooldowns', 'state']) assert.ok(text.all.includes(text[topic]), topic);
+  for (const topic of ['flags', 'cooldowns', 'state', 'rules']) assert.ok(text.all.includes(text[topic]), topic);
 });
 
 test('an unknown ref topic is a usage error', (t) => {
   const box = sandbox(t);
   for (const topic of ['nope', undefined, 'FLAGS', '__proto__']) {
-    assert.throws(() => getReference(topic, { configDir: box.target }), usage(/unknown ref topic.*flags, cooldowns, state, all/));
+    assert.throws(() => getReference(topic, { configDir: box.target }), usage(/unknown ref topic.*flags, cooldowns, state, rules, all/));
   }
 });
 

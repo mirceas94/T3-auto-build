@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
@@ -94,6 +95,44 @@ test('preflight preserves its snapshot contract, exhausted and filtered ladders,
   assert.equal((await runPreflight({ configDir: box.target, cwd, now })).resume.valid, false);
   write(stateFile, { flags: 'not-an-array' });
   assert.equal((await runPreflight({ configDir: box.target, cwd, now })).resume.valid, false);
+});
+
+test('sandbox prevents preflight and quota check from spawning provider CLIs on PATH', async (t) => {
+  const trapDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 't3ab-trap-')));
+  const marker = path.join(trapDir, 'spawned.txt');
+  const savedPath = process.env.PATH;
+  t.after(() => {
+    process.env.PATH = savedPath;
+    fs.rmSync(trapDir, { recursive: true, force: true, maxRetries: 5 });
+  });
+  for (const name of ['codex', 'agy', 'antigravity', 'claude']) {
+    if (process.platform === 'win32') {
+      fs.writeFileSync(path.join(trapDir, `${name}.cmd`), `@echo ${name}>>"${marker}"\r\n@exit /b 0\r\n`);
+    } else {
+      const bin = path.join(trapDir, name);
+      fs.writeFileSync(bin, `#!/bin/sh\necho "${name}" >> "${marker}"\nexit 0\n`, { mode: 0o755 });
+    }
+  }
+  process.env.PATH = `${trapDir}${path.delimiter}${savedPath ?? ''}`;
+
+  const box = sandbox(t);
+  const now = Date.now();
+  write(box.path(CONFIG), v3());
+  write(box.path('auto-build-availability.json'), {
+    schemaVersion: 1, checkedAt: new Date(now).toISOString(), ttlMs: 3_600_000, models: {},
+  });
+
+  const inProc = await runPreflight({ configDir: box.target, cwd: box.dir, now });
+  assert.deepEqual(inProc.quota.windows, []);
+
+  const cliPreflight = box.cli('preflight', '--json');
+  assert.equal(cliPreflight.status, 0, cliPreflight.stderr);
+  assert.deepEqual(JSON.parse(cliPreflight.stdout).quota.windows, []);
+
+  const cliCheck = box.cli('quota', 'check', '--refresh', '--claude-usage');
+  assert.equal(cliCheck.status, 0, cliCheck.stderr);
+
+  assert.equal(fs.existsSync(marker), false, 'sandbox must not spawn provider CLIs');
 });
 
 test('telemetry sanitizes hostile text, rotates, and skips corrupt JSONL lines', (t) => {

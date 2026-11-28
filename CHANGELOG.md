@@ -6,39 +6,85 @@ All notable changes to this project are documented here. The format follows
 
 ## [3.0.0] - 2026-11-27
 
+Version 3.0.0 cuts the `$auto-build` skill context by over 70%, replaces multi-step startup checks with a single `preflight` command, and adds live quota-aware routing so work automatically avoids low-quota pools. It also introduces schema v3 configs with `catalog.overrides.json`, a local run ledger with `stats`, self-healing `doctor --fix`, and stricter safety guards.
+
+### Highlights
+
+- **70%+ smaller skill context:** Rendered `SKILL.md` shrinks to 5.0–6.0 KiB (~5.2 KB template, down from ~21 KB), loading flag, cooldown, state, and rule references on demand via `t3-auto-build ref`.
+- **One-call Step 0 (`preflight`):** `t3-auto-build preflight --json` runs model checks, prunes and rechecks cooldowns, reads live quotas, and returns active locks, resolved ladders, `git status` baseline, and resume state.
+- **Live quota-aware routing:** Reads remaining quota from Codex and Antigravity (plus opt-in Claude), sorts eligible ladder entries by remaining pace, auto-locks nearly exhausted pools, and handles mid-run quota errors with `quota check --on-error`.
+- **Self-healing installs (`doctor --fix`):** Dry-run by default; repairs missing or drifted hooks, manifest hashes, skill mirrors, the runtime snapshot, and the state file's git `info/exclude` entry.
+- **Local run ledger and stats:** Record steps with `trace record` and review runs, failovers, and audit rejections with `stats` — kept strictly on your machine.
+- **Stricter guards and model overrides:** Hardens secret-file, `rm`, `git`, `delegate_task`, symlink, and payload-size guards, and lets v3 configs retire or alias models via `catalog.overrides.json`.
+
+### Breaking changes and upgrade steps
+
+- **Schema v3 configs:** New subscription installs and `upgrade` write `schemaVersion: 3`. 2.x hooks and CLI do not recognize schema 3 and fall back to default settings — restore the `.bak` config backup before downgrading.
+- **Upgrade behavior:** `upgrade` now converts both v1 and v2 configs to v3, backing up files it may change and restoring them if a write fails. It stops before writing if an installed hook has local changes.
+- **Upgrading from 2.x:**
+  1. Run `npx t3-auto-build@3.0.0 upgrade`. If it stops because an installed hook was edited locally, run `npx t3-auto-build@3.0.0 init --force` (which backs up edits to `.bak`) and re-run `upgrade`.
+  2. Restart T3 Code (and any open Claude Code sessions) so updated hooks and `settings.json` load.
+  3. Upgrading from 1.x? Run `upgrade` as above, then set your real tiers with `npx t3-auto-build@3.0.0 init --claude-tier <tier> --codex-tier <tier> --antigravity-tier <tier>` and restart T3 Code. See [Upgrading](README.md#upgrading) and [Migrating from v1](README.md#migrating-from-v1).
+
 ### Added
 
-- `preflight [--json] [--flags <text>] [--cwd <dir>] [--refresh]`: one deterministic Step 0 call that runs the model check (including cooldown pruning and lock rechecks) and reports active locks, resolved ladders, `recheck-via-t3` canaries, the `git status` baseline and resume state, with `expiresAt` and `configHash`.
-- `ref <flags|cooldowns|state|all>`: on-demand reference text rendered from the installed config.
-- `trace record` and `stats [--days <n>] [--json]`: a local JSONL run ledger (`auto-build-ledger.jsonl`) with size rotation, and a summary of it.
-- `doctor --fix [--yes] [--cwd <dir>]`: dry-run by default; repairs drifted or missing hooks and their manifest hashes, skill mirrors, the runtime snapshot and the state file's git `info/exclude` entry.
-- `catalog.overrides.json` (v3 configs): retire more models and alias model names without a package release. A `models` list is validated but not yet applied.
-- Config keys `telemetry`, `preflight` and `catalogOverrides`.
-- Generated `auto-build-runtime.json` snapshot of the allowlist and bans for v3 configs.
+- **Preflight and quota routing:**
+  - `preflight [--json] [--flags <text>] [--cwd <dir>] [--refresh]`: single deterministic Step 0 call that runs model checks (cooldown pruning and lock rechecks) and reports active locks, resolved ladders, `recheck-via-t3` canaries, `git status` baseline, resume state, `quota`, `expiresAt`, and `configHash`.
+  - Quota-paced routing in `preflight`: reads provider quota (capped at 20s; timed-out reads are aborted so no late cache or lock writes happen, falling back to cache marked stale), caches it in `auto-build-quota.json` (no account IDs or emails), and orders eligible ladder entries by pace (scarce pools stay last; unknown pace keeps ladder order).
+  - Preflight `warnings`: suggests `--budget` when the parent model's weekly quota is known and under 20% (never changes the parent; Claude quota requires opt-in `quota.claudeUsage`).
+  - Quota readers: Codex (`codex app-server`, experimental), Antigravity (`agy -p /usage`), and opt-in Claude (`claude -p /usage`, which creates session directories).
+  - `quota check [subject] [--refresh] [--on-error] [--claude-usage] [--json]`: reads live quota and writes threshold locks; `--on-error` waits out a reset under 2 minutes away and answers `retry`, else answers `failover` and burst-locks that pool when no window is exhausted.
+- **CLI and diagnostics:**
+  - `ref <flags|cooldowns|state|rules|all>`: on-demand reference text rendered from the installed config.
+  - `trace record` and `stats [--days <n>] [--json]`: local JSONL run ledger (`auto-build-ledger.jsonl`) with size rotation and a summary report.
+  - `doctor --fix [--yes] [--cwd <dir>]`: dry-run by default; repairs missing or drifted hooks and their manifest hashes, skill mirrors, `auto-build-runtime.json`, and the state file's git `info/exclude` entry.
+- **Configuration and workflow rules:**
+  - `catalog.overrides.json` (v3 configs): retire additional models and alias model names without a package release (`models` entries are validated but not yet applied).
+  - Config keys `telemetry`, `preflight`, `catalogOverrides`, and `quota` (`minRemainingPct`, `ttlMs`, `claudeUsage`, `burstLockMs`).
+  - Generated `auto-build-runtime.json` snapshot of the allowlist and bans for v3 configs.
+  - Skill rules: every handoff packet (builder, tester, auditor, architect) carries the repo profile's test isolation rules; shared contracts land in wave 1 and stay frozen for parallel builders; after fix round 2 only a logged, re-verified orchestrator micro-patch (10 lines or fewer) is allowed; auditors receive blind tests and results, and any auditor's reproduced `BLOCKER` vetoes approval.
 
 ### Changed
 
-- Slim skill: the template is ~5.1 KB (down from ~21 KB) and the rendered `SKILL.md` is over 70% smaller (5.2–6.1 KB across presets and tiers). Step 0 is a single `preflight --json` call, flag/cooldown/state details come from `t3-auto-build ref`, and rendered ladders use compact numbered allowlist indices.
-- The model catalog and retired list moved to `hooks/_catalog.mjs`, which is installed with the hooks.
-- `upgrade` converts v1 and v2 configs to v3. It backs up the files it may change first and restores them if a write fails.
-- `pre-tool-use.mjs` returns early for unguarded tools such as `Read`, `Grep` and `Glob`, after the input shape check.
-- `pre-compact.mjs` omits empty list lines.
-- Internal modules split into `lib/install/{plan,write,upgrade}.mjs` and `lib/discover/{sources,merge,cache}.mjs`.
-
-### Breaking
-
-- New subscription configs and `upgrade` write `schemaVersion: 3`.
-- 2.x hooks and CLI do not know schema 3 and fall back to default settings. Do not downgrade an upgraded config without restoring its `.bak` backup.
-- `upgrade` now also converts v2 configs, and stops if an installed hook has local changes.
-
-### Security
-
-- `catalog.overrides.json` cannot un-retire a model. An alias cannot involve a retired model or link two providers or two built-in models. An invalid file is ignored except for a well-formed `retiredModels` list.
-- The run ledger is local only, keeps a fixed set of fields as single short lines, refuses a symlinked ledger path and can be turned off with `telemetry.enabled: false`.
+- **Skill and hooks:**
+  - Slimmed `SKILL.md` template to ~5.2 KB (down from ~21 KB) and rendered `SKILL.md` to 5.0–6.0 KiB using `preflight --json`, on-demand `t3-auto-build ref`, and compact numbered allowlist indices.
+  - Moved the model catalog and retired list to `hooks/_catalog.mjs`, installed with the hooks.
+  - `pre-tool-use.mjs` returns early for unguarded tools (`Read`, `Grep`, `Glob`, etc.) after checking input shape; `pre-compact.mjs` omits empty list lines.
+- **Quota and cooldowns:**
+  - Quota windows at or below `quota.minRemainingPct` (default `3`) lock the mapped provider or pool until reset without shortening a longer lock.
+  - After a mid-run quota error, the skill runs `quota check <provider:model> --on-error` and follows its action (`quota set` remains the manual fallback).
+  - Cooldown, availability, and quota lock writes take a file lock and replace files atomically.
+  - Dated model bans (e.g. `claude-x-20250101`) block both that ID and its undated name, which also matches other dated releases of that model.
+- **Install, config, and maintenance:**
+  - Config validation is stricter while still allowing legacy malformed `retiredModels` lists to upgrade.
+  - Settings backups use `settings.json.bak`, `.bak.1`, etc., reusing an identical existing backup.
+  - Manifest ownership: `init --force` records identical files so `uninstall` removes them; plain `init`, `sync-models`, and `doctor --fix` never claim an unowned identical skill mirror.
+  - `uninstall` now also removes `auto-build-quota.json` and `auto-build-runtime.json`.
+  - Developer internals and CI: split modules into `lib/install/{plan,write,upgrade}.mjs` and `lib/discover/{sources,merge,cache}.mjs`; CI syntax checks cover `lib/*/*.mjs`; publish workflow fails unless `HEAD` is the `v<version>` tag commit.
 
 ### Fixed
 
-- A legacy `tier:<provider>:heavy` cooldown also locks the catalog's scarce models of that provider, unless the config lists its own `heavyModels`.
+- Legacy `tier:<provider>:heavy` cooldowns now also lock the catalog's scarce models for that provider, unless the config lists its own `heavyModels`.
+- `sync-models --force` now forwards `--force` to config sync so an edited managed `SKILL.md` is backed up and replaced.
+- The `git push` guard no longer blocks a branch name such as `bug-fix`; force flags stay blocked.
+
+### Security
+
+- **PreToolUse guards:**
+  - Strips NTFS alternate data stream suffixes (`:stream`, `::$DATA`) from `Edit`/`Write`/`MultiEdit` paths before the secret-file check.
+  - Blocks brace-list and bare whole-variable `rm` targets.
+  - Detects force pushes, `+ref` pushes, and `git reset --hard` even after git global options (`-C`, `-c`, `--git-dir`, etc.).
+  - Blocks non-object `delegate_task` `target` values and validates the `model` option.
+- **Hook input limits:** Caps hook stdin at 8 MiB; `pre-tool-use.mjs` blocks oversized payloads while other hooks fail open.
+- **Symlink and ledger safety:**
+  - Skips symlinked `.bak` backups, refuses a symlinked manifest, and makes `quota clear --all` refuse a symlinked or non-regular cooldown file.
+  - Keeps `auto-build-ledger.jsonl` local-only with a fixed set of short single-line fields, refuses symlinked ledger paths, and supports `telemetry.enabled: false`.
+- **Catalog override safety:** `catalog.overrides.json` cannot un-retire built-in retired models or alias retired models, cross-provider targets, or two built-in models; invalid files are ignored except for a well-formed `retiredModels` list.
+
+### Docs
+
+- Restructured [README.md](README.md) with a plain-language User Guide at the top and an [Advanced reference](README.md#advanced-reference) section below.
+- Aligned `CONTRIBUTING.md`, `SECURITY.md`, and `.github/` workflows and issue templates with 3.0.0 (test isolation, sanitize checks, project structure, and release workflows).
 
 ## [2.3.0] - 2026-11-27
 

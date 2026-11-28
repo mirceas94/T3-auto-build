@@ -29,7 +29,7 @@ Commands:
   quota set <subject>          lock a provider/model, or a model pool with --pool
   quota status                 show active locks and drop expired ones
   quota clear [subject]        remove locks of a provider/model (or --all)
-  quota check [provider]       run official login status commands
+  quota check [subject]        read remaining quota of a provider or provider:model
   preflight                    check models, then print locks, ladders, baseline and resume state
   ref <topic>                  print reference text: ${REF_TOPICS.join(' | ')}
   trace record [json]          append one step to the run ledger (JSON or field flags)
@@ -83,6 +83,12 @@ quota set only:
   --reason <text>              note shown by quota status
 quota clear flag: --all        remove every lock
 
+quota check only:
+  --refresh                    ignore the quota cache TTL
+  --on-error                   after a quota error: re-read, then answer retry or failover (needs a subject)
+  --claude-usage               also read Claude usage (creates Claude session directories)
+  --json                       print machine-readable results
+
 preflight only:
   --flags <text>               inline run flags, e.g. "--codex-only --dry-run"
   --cwd <dir>                  project dir (default: current dir)
@@ -118,7 +124,7 @@ Examples:
   Overflow to cross-hosted models requires an explicit provider, e.g. antigravity:claude-opus-5-5.`;
 
 const VALUE_FLAGS = ['target', 'preset', 'modules', 'compaction', 'tiers', 'providers', 'until', 'reason', 'parent', 'claude-tier', 'codex-tier', 'antigravity-tier', 'ttl', 'pool', 'skill-targets', 'flags', 'cwd', 'days', 'step', 'model', 'provider', 'outcome', 'level', 'shape', 'effort', 'duration'];
-const SWITCHES = ['yes', 'force', 'help', 'version', 'probe', 'dry-run', 'all', 'auto', 'refresh', 'probe-scarce', 'recheck-locks', 'apply', 'json', 'allow-usage-credits', 'allow-fast-modes', 'verified-org', 'fix', ...QUOTA_WINDOWS];
+const SWITCHES = ['yes', 'force', 'help', 'version', 'probe', 'dry-run', 'all', 'auto', 'refresh', 'probe-scarce', 'recheck-locks', 'apply', 'json', 'allow-usage-credits', 'allow-fast-modes', 'verified-org', 'fix', 'on-error', 'claude-usage', ...QUOTA_WINDOWS];
 const TRACE_FLAGS = ['step', 'model', 'provider', 'outcome', 'level', 'shape', 'effort', 'duration'];
 const COMMAND_FLAGS = {
   init: ['preset', 'modules', 'compaction', 'tiers', 'probe', 'yes', 'force', ...Object.values(TIER_FLAGS).map((f) => f.slice(2)), 'parent', 'allow-usage-credits', 'allow-fast-modes', 'verified-org', 'skill-targets'],
@@ -128,7 +134,7 @@ const COMMAND_FLAGS = {
   'sync-models': ['dry-run', 'providers', 'yes', 'auto', 'force', 'refresh', 'probe-scarce', 'apply'],
   'availability mark': ['ttl', 'reason'], 'availability status': [],
   'quota set': [...QUOTA_WINDOWS, 'until', 'reason', 'pool'],
-  'quota status': [], 'quota clear': ['all'], 'quota check': [],
+  'quota status': [], 'quota clear': ['all'], 'quota check': ['refresh', 'on-error', 'claude-usage', 'json'],
 };
 const ARGUMENTS = { upgrade: [0, 0], 'availability mark': [2, 2], 'quota set': [1, 1], 'quota clear': [0, 1], 'quota check': [0, 1], ref: [1, 1], 'trace record': [0, 1] };
 
@@ -186,7 +192,7 @@ async function sync(target, { yes = false, dryRun = false, force = false, provid
     }
     declined = true; return false;
   };
-  const summary = await syncModels(target, { providers, dryRun, yes, refresh, probeScarce, confirm });
+  const summary = await syncModels(target, { providers, dryRun, yes, force, refresh, probeScarce, confirm });
   if (dryRun) {
     const { allowlist, planRestricted, cooldowns, changed } = summary;
     console.log(JSON.stringify({ allowlist, planRestricted, cooldowns, changed }, null, 2));
@@ -253,9 +259,21 @@ function availability(action, target, args, flags) {
   } else markAvailability({ configDir: target, ref: args[0], status: args[1], ttl: flags.ttl, reason: flags.reason });
 }
 
+async function quotaReport(target, subject, flags) {
+  const onError = flags['on-error'];
+  if (onError && subject === undefined) throw new CliError('quota check --on-error needs a provider or provider:model', 2);
+  const result = await quotaCheck(target, {
+    subject, onError, refresh: flags.refresh, claudeUsage: flags['claude-usage'],
+    // Progress lines would corrupt the JSON on stdout.
+    log: flags.json ? () => {} : console.log,
+  });
+  if (flags.json) console.log(JSON.stringify(result, null, 2));
+  else if (onError) console.log(`action: ${result.action}`);
+}
+
 function quota(action, target, subject, flags) {
   if (action === 'status') return quotaStatus(target);
-  if (action === 'check') return quotaCheck(target, { providers: subject === undefined ? undefined : [subject] });
+  if (action === 'check') return quotaReport(target, subject, flags);
   if (action === 'clear') {
     if ((subject === undefined) !== Boolean(flags.all)) throw new CliError('quota clear needs a provider, a model or --all (not both)', 2);
     return quotaClear(target, flags.all ? { all: true } : subject);

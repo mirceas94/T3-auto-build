@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { resolveTiers, toConfig } from '../lib/plans.mjs';
+import { CATALOG, resolveTiers, toConfig } from '../lib/plans.mjs';
 import { getReference } from '../lib/ref.mjs';
 import { renderSkill } from '../lib/render.mjs';
 import { sandbox, write } from './helpers.mjs';
@@ -23,6 +23,7 @@ for (const [name, config] of [['v1 preset', v1], ['v2 resolved', v2]]) {
     assert.match(skill, /t3-auto-build availability mark <provider:model> plan-restricted --ttl 24h/);
     assert.ok(skill.includes(`at most ${config.maxParallelBuilders ?? 2} builders in parallel`));
     assert.match(skill, /auto-build-availability\.json/);
+    assert.match(skill, /t3-auto-build quota check <provider:model> --on-error/);
   });
 }
 
@@ -55,11 +56,50 @@ test('every core flag and pipeline step survives in SKILL.md or the ref text', (
   for (const needed of [
     'REPO_BRIEF', 'Handoff Packet', 'Cross-Check', 'Diff Guard', 'Blind', 'VERDICT: APPROVED', 'VERDICT: REJECTED',
     'BLOCKER', 'COMMIT_MSG', 'Model Trace', 'Model used:', 'recheck-via-t3', 't3-auto-build preflight', 'auto-build-state.json',
+    'quota check <provider:model> --on-error', 'auto-build-quota.json', '--claude-usage',
   ]) assert.ok(both.includes(needed), needed);
 });
 
 test('template and core CLAUDE.md hardcode no roster model ids', () => {
   for (const source of [template, read('core/CLAUDE.md')]) {
     assert.doesNotMatch(source.replace(/\{\{[^{}]*\}\}/g, ''), /gpt-\d|gemini-\d|claude-(haiku|sonnet|opus|fable)/i);
+  }
+});
+
+test('orchestration rules are in the skill and detailed in ref rules', (t) => {
+  const box = sandbox(t);
+  write(box.path('auto-build.config.json'), v2);
+  const skill = renderSkill(template, v2, box.target);
+  const rules = getReference('rules', { configDir: box.target });
+  for (const [inSkill, inRef] of [
+    [/every Handoff Packet:.*isolation rules \(`t3-auto-build ref rules`\)/, /repo-profile\.md\. Every Handoff Packet \(builder, tester, auditor, architect\) includes them\./],
+    [/test\/lint, conventions, isolation/, /Triage records/],
+    [/shared: wave 1; parallel builders change them only if you decide/, /only the orchestrator decides/],
+    [/never silently self-edit \(except Step 6 micro-patch\)/, /at most 10 lines/],
+    [/After R2: your <=10-line micro-patch only if logged in Model Trace \+ Step 5 re-verified; else save state, stop/, /save state and stop/],
+    [/Any auditor's reproduced BLOCKER vetoes APPROVED \(no majority\/override\)/, /vetoes APPROVED/],
+    [/Auditors get Step 4 tests\+results/, /Step 4 Tester stays blind/],
+  ]) {
+    assert.match(skill, inSkill);
+    assert.match(rules, inRef);
+  }
+  assert.match(rules, /config\.quota\.claudeUsage/);
+});
+
+test('every tier combination renders within 6144 bytes', () => {
+  const dir = path.join(os.homedir(), '.claude');
+  const [claude, codex, antigravity] = ['claude', 'codex', 'antigravity'].map((provider) => [
+    ...new Set(['none', ...Object.keys(CATALOG[provider])]),
+  ]);
+  for (const c of claude) for (const x of codex) for (const a of antigravity) {
+    let config;
+    try {
+      config = toConfig(resolveTiers({ claude: c, codex: x, antigravity: a }, { allowUsageCredits: true }), { preset: 'custom' });
+    } catch (error) {
+      if (/no CLI-capable subscription/.test(error.message)) continue; // nothing to render
+      throw error;
+    }
+    const size = Buffer.byteLength(renderSkill(template, config, dir), 'utf8');
+    assert.ok(size <= 6144, `${c}/${x}/${a}: ${size} bytes`);
   }
 });

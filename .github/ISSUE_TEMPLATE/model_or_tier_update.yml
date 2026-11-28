@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Use this form to request updates to the built-in model catalog (`lib/plans.mjs`) or retired-model list (`hooks/_shared.mjs`).
+        Use this form to request updates to the built-in model catalog (`hooks/_catalog.mjs`, `lib/plans.mjs`) or retired-model list (`hooks/_catalog.mjs`).
   - type: dropdown
     id: change-type
     attributes:

@@ -4,5 +4,9 @@
 .claude/auto-build-state.json
 auto-build-cooldowns.json
 auto-build-availability.json
+auto-build-quota.json
 *.bak
 .DS_Store
+
+# Local planning notes, not for the package
+.claude/quota-plan.md

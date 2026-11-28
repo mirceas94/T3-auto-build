@@ -2,31 +2,102 @@
 import path from 'node:path';
 import { isLocked, readCooldowns } from './_quota.mjs';
 import {
-  AVAILABILITY_FILE, COOLDOWN_FILE, canonicalProvider, configDirOf, effectiveAllowlist, fastModeRequested, isBanned,
-  isPlanRestricted, isSupportedSchema, loadConfig, matchRetired, modelKeys, normalizeModel, payloadProblem, prop,
-  readAvailability, readPayload, resolveTarget, restrictedBy, str, warn,
+  AVAILABILITY_FILE, COOLDOWN_FILE, MAX_PAYLOAD_BYTES, canonicalProvider, configDirOf, effectiveAllowlist,
+  fastModeRequested, isBanned, isObject, isPlanRestricted, isSupportedSchema, loadConfig, matchRetired, modelKeys,
+  normalizeModel, payloadProblem, prop, readAvailability, readPayload, resolveTarget, restrictedBy, str, warn,
 } from './_shared.mjs';
 
 // (?=\n?$) mirrors .NET's "$", which also matches before a trailing newline.
-const SECRET_PATHS = [/(^|[\\/])\.env((?=\n?$)|\.)/i, /\.(pem|key|p12|pfx)(?=\n?$)/i, /id_rsa|id_ed25519/i];
-const DESTRUCTIVE = [/git\s+push\s+.*(-f|--force)/i, /git\s+reset\s+--hard/i];
+const SECRET_PATHS = [/(^|[\\/]|^[a-z]:)\.env((?=\n?$)|\.)/i, /\.(pem|key|p12|pfx)(?=\n?$)/i, /id_rsa|id_ed25519/i];
 
 const SCAN_LIMIT = 5e7;
 const same = (a, b) => a.toLowerCase() === b.toLowerCase();
 
+/** Removes an NTFS alternate data stream suffix (":stream" / "::$DATA") from the basename without breaking drive letters. */
+function stripNtfsStream(file) {
+  const match = file.match(/^(.*[/\\]|[a-z]:)([\s\S]*)$/i);
+  const prefix = match ? match[1] : '';
+  const base = match ? match[2] : file;
+  return prefix + base.replace(/:[^\r\n]*/, '');
+}
+
 // Groups: redirection, command separator, word ($(...) stays in its word).
-// The second pass ignores quotes, for an rm inside bash -c "...".
+// The second pass ignores quotes, for a command inside bash -c "...".
 const SHELL_TOKENS = [
   /(\d*(?:&>>?|>>?&?|<+))|(\\;|[\n;&|()`])|((?:"(?:\\.|[^"\\])*"|'[^']*'|\$\((?:[^()]|\([^()]*\))*\)|\$\(|[^\s;&|<>()`"']|["'])+)/g,
   /(\d*(?:&>>?|>>?&?|<+))|(\\;|[\n;&|()`])|((?:\$\((?:[^()]|\([^()]*\))*\)|\$\(|[^\s;&|<>()`])+)/g,
 ];
 
-/** Absolute, home, substituted, current or parent directory, "*", a dot-file glob, or anything in .git. */
+/** True when `arg` contains a closed brace-expansion list like `{a,b}`. */
+function hasBraceList(arg) {
+  const stack = [];
+  for (const ch of arg) {
+    if (ch === '{') stack.push(false);
+    else if (ch === ',' && stack.length) stack[stack.length - 1] = true;
+    else if (ch === '}' && stack.length && stack.pop()) return true;
+  }
+  return false;
+}
+
+const WHOLE_VAR = /^(?:\$(?:(?:env:)?[a-z_]\w*|\d+|[@*]|\{[^}]+\})|%[a-z_]\w*%)$/i;
+
+/** Absolute, home, substituted, brace list, bare variable, current/parent dir, "*", dot-file glob, or .git. */
 function isProtectedTarget(arg) {
   if (/^(?:[/\\~]|[a-z]:(?:[\\/]|$)|\$\{?(?:env:)?(?:home|userprofile)(?!\w)|%userprofile%)|\$\(|`/i.test(arg)) return true;
+  if (hasBraceList(arg)) return true;
   const relative = arg.replace(/\\/g, '/').replace(/^(\.\/+)+/, '').replace(/\/+$/, '');
-  return ['', '.'].includes(relative) || /^\*+$/.test(relative)
+  return ['', '.'].includes(relative) || WHOLE_VAR.test(relative) || /^\*+$/.test(relative)
     || /^\.[^/]*[*?[{]/.test(relative) || /(^|\/)(\.\.|\.git)($|\/)/i.test(relative);
+}
+
+const GIT_GLOBAL_VALUE_OPTS = new Set(['-c', '--git-dir', '--work-tree', '--namespace', '--config-env', '--super-prefix', '--attr-source']);
+const GIT_PUSH_VALUE_OPTS = new Set(['-o', '--push-option', '--repo', '--receive-pack', '--exec']);
+
+/** True when any git invocation in the command runs force push (flags or +refspec) or reset --hard, even after global options. */
+function isDestructiveGit(command) {
+  const text = command.replace(/\\\r?\n/g, ' ');
+  const calls = [...text.matchAll(/(?<![\w.-])git(?:\.exe)?["']?(?=[\s<>])/gi)];
+  if (calls.length * text.length > SCAN_LIMIT) return true;
+  return calls.some((hit) => {
+    const rest = text.slice(hit.index + hit[0].length);
+    return SHELL_TOKENS.some((tokens) => {
+      let redirected = false;
+      let skipNext = false;
+      let sub = null;
+      let options = true;
+      for (const [, redirect, separator, word] of rest.matchAll(tokens)) {
+        if (separator || word?.startsWith('#')) break;
+        if (word && !redirected) {
+          const arg = word.replace(/["']/g, '');
+          if (skipNext) {
+            skipNext = false;
+          } else if (sub === null) {
+            if (arg === '--') break;
+            if (arg.startsWith('-')) {
+              if (GIT_GLOBAL_VALUE_OPTS.has(arg.toLowerCase())) skipNext = true;
+            } else {
+              sub = arg.toLowerCase();
+              if (sub !== 'push' && sub !== 'reset') break;
+            }
+          } else if (sub === 'reset') {
+            if (options && arg === '--') options = false;
+            else if (options && arg.toLowerCase() === '--hard') return true;
+          } else if (sub === 'push') {
+            if (options && arg === '--') options = false;
+            else if (options && arg.startsWith('-')) {
+              const lower = arg.toLowerCase();
+              if (lower.startsWith('--force') || (!lower.startsWith('-o') && /^-[a-z0-9]*f/i.test(arg))) return true;
+              if (GIT_PUSH_VALUE_OPTS.has(lower)) skipNext = true;
+            } else if (/^\+\S/.test(arg)) {
+              return true;
+            }
+          }
+        }
+        redirected = Boolean(redirect);
+      }
+      return false;
+    });
+  });
 }
 
 /** True when any recursive "rm" in the command has a protected target. */
@@ -84,7 +155,7 @@ function modelBlock(model, { providers, config, availability, allowed, known, kn
   if ([model, ...keys].some((name) => matchRetired(name, config.retiredModels))) {
     return `Blocked by allowlist hook: model '${model}' is banned (retired).`;
   }
-  if ([model, normalizeModel(model)].some((name) => isBanned(name, config.bannedModels))) {
+  if ([model, normalizeModel(model)].some((name) => isBanned(name, config.bannedModels, config))) {
     return `Blocked by allowlist hook: model '${model}' is banned.`;
   }
   if (isPlanRestricted(config.planRestrictedModels, target.provider, model, config)) {
@@ -105,6 +176,21 @@ function modelBlock(model, { providers, config, availability, allowed, known, kn
   return null;
 }
 
+function optionModels(ref) {
+  const options = prop(ref, 'options');
+  if (Array.isArray(options)) {
+    return options
+      .filter((entry) => typeof prop(entry, 'id') === 'string' && same(prop(entry, 'id'), 'model'))
+      .map((entry) => str(prop(entry, 'value')))
+      .filter(Boolean);
+  }
+  if (isObject(options)) {
+    const value = str(prop(options, 'model'));
+    return value ? [value] : [];
+  }
+  return [];
+}
+
 function blockReason(payload) {
   const problem = payloadProblem(payload);
   if (problem) return `Blocked by safety hook: ${problem}.`;
@@ -115,24 +201,30 @@ function blockReason(payload) {
 
   if (['edit', 'write', 'multiedit'].includes(tool.toLowerCase())) {
     const file = str(prop(input, 'file_path'));
-    if (SECRET_PATHS.some((pattern) => pattern.test(file))) {
+    const stripped = stripNtfsStream(file);
+    const candidates = stripped === file ? [file] : [file, stripped];
+    if (candidates.some((candidate) => SECRET_PATHS.some((pattern) => pattern.test(candidate)))) {
       return `Blocked by safety hook: modifying secret/credential file '${file}' is prohibited.`;
     }
   }
 
   if (same(tool, 'bash')) {
     const command = str(prop(input, 'command'));
-    if (DESTRUCTIVE.some((pattern) => pattern.test(command)) || removesProtected(command)) {
+    if (isDestructiveGit(command) || removesProtected(command)) {
       return `Blocked by safety hook: destructive command '${command}' is prohibited.`;
     }
   }
 
   if (/delegate_task/i.test(tool)) {
+    const targetInput = prop(input, 'target');
+    if (targetInput !== undefined && !isObject(targetInput)) {
+      return `Blocked by safety hook: target of '${tool}' is not an object.`;
+    }
     // Legacy top-level fields and T3's nested `target` are both checked, so neither can mask the other.
     // A call without a model is allowed (as the PowerShell script does); only provider cooldowns apply to it.
-    const refs = [input, prop(input, 'target')];
+    const refs = [input, targetInput];
     const field = (name) => refs.map((ref) => str(prop(ref, name))).filter(Boolean);
-    const models = field('model');
+    const models = [...new Set([...field('model'), ...refs.flatMap(optionModels)])];
     const providers = ['provider', 'providerInstanceId', 'driverKind'].flatMap(field);
     const configDir = configDirOf(import.meta.url);
     const config = loadConfig(configDir);
@@ -165,11 +257,25 @@ function blockReason(payload) {
 }
 
 try {
-  const reason = blockReason(await readPayload());
-  if (reason) {
-    // exitCode (not process.exit) lets stderr flush before the process ends.
-    process.exitCode = 2;
-    process.stderr.write(`${reason}\n`);
+  let payload;
+  try {
+    payload = await readPayload({ throwOnLimit: true });
+  } catch (error) {
+    if (error?.code === 'EPAYLOAD_TOO_LARGE') {
+      process.exitCode = 2;
+      process.stderr.write(`Blocked by safety hook: hook input exceeded ${MAX_PAYLOAD_BYTES} bytes.\n`);
+      payload = undefined;
+    } else {
+      throw error;
+    }
+  }
+  if (payload !== undefined) {
+    const reason = blockReason(payload);
+    if (reason) {
+      // exitCode (not process.exit) lets stderr flush before the process ends.
+      process.exitCode = 2;
+      process.stderr.write(`${reason}\n`);
+    }
   }
 } catch (error) {
   warn(`pre-tool-use failed (${error.message})`);

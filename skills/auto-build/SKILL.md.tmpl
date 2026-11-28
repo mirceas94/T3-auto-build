@@ -2,18 +2,18 @@
 name: auto-build
 description: Multi-model T3 build/audit.
 ---
-You orchestrate via native delegate_task (or T3 ACP fallback); never silently self-edit or pause to ask. MUST delegate Triage, Builder, L1-L3 cross-provider audit and give Model Trace; no delegation: say so. EXECUTED MODEL ECHO: delegate's line 1 is `Model used: <model>`; log dispatched effort. Config {{configPath}}: edit it, run `t3-auto-build init`.
+Orchestrate via native delegate_task (or T3 ACP); never silently self-edit (except Step 6 micro-patch) or pause to ask. MUST delegate Triage, Builder, L1-L3 cross-provider audit (cannot: say so); give Model Trace. Delegate's line 1 is `Model used: <model>`; log dispatched effort. Config {{configPath}} (then `t3-auto-build init`).
 
 ## Flags (`t3-auto-build ref flags`)
---fast (cap L1); --strict (force L3); --plan-only (stop after 2); --dry-run (stop after 1, show routing/locks); --audit-only (0,1,5,6 on uncommitted diff); --resume; --commit; --no-audit; --no-tests; --budget (Tier 1/low, mid auditors); --reset-cooldowns (`t3-auto-build quota clear --all`); one provider: {{providerFlags}}
+--fast (cap L1); --strict (force L3); --plan-only (stop after 2); --dry-run (stop after 1, show routing/locks); --audit-only (0,1,5,6 on uncommitted diff); --resume; --commit; --no-audit; --no-tests; --budget (Tier 1/low, mid auditors); --reset-cooldowns; one provider: {{providerFlags}}
 
-Follow-up (no $auto-build): answer questions. L0 tweak: 0, Tier 1 low, 3.5, targeted test/lint. L1-L3: rerun from 0, reuse brief if targets unchanged.
+Follow-up (no $auto-build): answer. L0 tweak: 0, Tier 1 low, 3.5, targeted test/lint. L1-L3: rerun from 0, reuse brief if same targets.
 
 ## Strict {{modelCount}}-Model Allowlist
 {{allowlist}}
-BANNED: {{banned}}unlisted/retired. No speed modes (fast/ultrafast/priority) unless config allowFastModes. Delegates set provider, model, effort (low/medium/high); default {{defaultModel}} @ {{defaultEffort}}. Max lines: REPO_BRIEF 15, plan 25, test summary 5, audit 15. No filler/Advisor. Compaction {{compactionThreshold}}%.
+BANNED: {{banned}}unlisted/retired. No speed modes (fast/ultrafast/priority) unless allowFastModes. Set delegate provider, model, effort low/medium/high; default {{defaultModel}} @ {{defaultEffort}}. Line caps: REPO_BRIEF 15, plan 25, test summary 5, audit 15. No filler/Advisor. Compaction {{compactionThreshold}}%.
 
-## Ladders (first eligible; n@e = allowlist #n via its provider, effort e; send the full id)
+## Ladders (first eligible; n@e = allowlist #n, its provider, effort e; send full id)
 Native pools before scarce: {{scarceModels}}.
 Tier 1: {{tier1}}
 Shape A (multi-file/wide/UI/wiring)
@@ -25,35 +25,34 @@ Shape B (state/algorithms/regex/debug)
  Tester: {{testerB}}
  Auditor: {{auditorB}}
 Architect (Tier 3): {{architect}}
-Dual Audit (security + architecture): {{dualAuditRun}}
+Dual Audit (security+architecture): {{dualAuditRun}}
 
 ## Cooldowns {{cooldownsPath}}
-Schema/canary: `t3-auto-build ref cooldowns`; locks bind except recheck-via-t3.
+`t3-auto-build ref cooldowns`; locks bind except recheck-via-t3.
 1. Plan error: no cooldown; `t3-auto-build availability mark <provider:model> plan-restricted --ttl 24h`; advise `t3-auto-build sync-models`.
-2. Quota: `t3-auto-build quota set <provider|model|provider:model> --burst|--5h|--weekly` (burst: model; 5h/weekly: provider, or --pool; no CLI: write the file).
-3. Fail over down ladder; trace it.
-4. Exhausted: save state, stop, report reset (--resume).
+2. Quota error: `t3-auto-build quota check <provider:model> --on-error`. `retry`: once; `failover` or repeat: fail over. Unlocked longer limit: `quota set` per ref.
+3. Fail over down ladder; trace. Exhausted: save state, stop, report reset (--resume).
 
 ## Steps
-0 `t3-auto-build preflight --json --flags "<active flags>"` (runs `t3-auto-build check-models`); obey its output.
-No CLI: read {{availabilityPath}} + cooldowns, skip locked/unavailable; `git status --short`.
-Subscriptions: {{subscriptionSummary}}. --strict sans --budget: warn if {{dualAuditNames}} all locked.
-State .claude/auto-build-state.json (`t3-auto-build ref state`, gitignored): save per wave; --resume continues (invalid: stop).
+0 `t3-auto-build preflight --json --flags "<active flags>"` (runs `t3-auto-build check-models`); obey it.
+No CLI: skip locked/unavailable per {{availabilityPath}} + cooldowns; `git status --short`.
+--strict sans --budget: warn if {{dualAuditNames}} all locked.
+State .claude/auto-build-state.json (`t3-auto-build ref state`, gitignored): save per wave; --resume (invalid: stop).
 
-1 Triage (Tier 1 low): cache .claude/repo-profile.md (test/lint commands, conventions). REPO_BRIEF: files+lines, interfaces, commands, level, shape. L0 1 file <20 lines (copy/CSS/rename), no logic/security risk; L1 contained; L2 multi-file; L3 auth/security/payments/DB/concurrency/crypto.
+1 Triage (Tier 1 low): cache .claude/repo-profile.md (test/lint, conventions, isolation). REPO_BRIEF: files+lines, interfaces, commands, level, shape. L0 1 file <20 lines (copy/CSS/rename), no logic/security risk; L1 contained; L2 multi-file; L3 auth/security/payments/DB/concurrency/crypto.
     - `Shape A` Builder: `{{firstBuilderA}}`
     - `Shape B` Builder: `{{firstBuilderB}}`
-Pass brief on. 4-part Handoff Packet per delegate: owned files, files to read, interface contract, fast exit check.
+Pass brief; every Handoff Packet: owned files, files to read, contract, exit check, isolation rules (`t3-auto-build ref rules`).
 
-2 Plan (L2/L3): Architect high (budget medium): disjoint waves, contracts, edge cases, tests. L3 Cross-Check: one medium opposite-provider Architect (not budget/one-provider).
+2 Plan (L2/L3): Architect high (budget medium): disjoint waves, contracts (shared: wave 1; parallel builders change them only if you decide), edge cases, tests. L3 Cross-Check: medium opposite-provider Architect (not budget/one-provider).
 
-3 Build: L0 Tier 1 low. L1 Builder medium (budget low; ladder @effort wins). L2/L3: waves foundations, core, tests/docs; at most {{maxParallelBuilders}} builders in parallel, one owner/file; L3 high (budget medium). Shift Left: per wave 3.5, exit checks, typecheck, fix. Builder Rules: reuse code/stdlib, no speculative abstractions/single-use wrappers, list assumptions, optional Context7, return 1-line `COMMIT_MSG:`.
-3.5 Diff Guard: vs baseline+plan, revert unrelated edits and weakened tests.
+3 Build: L0 Tier 1 low; L1 medium (budget low; ladder @effort wins). L2/L3: waves foundations, core, tests/docs; at most {{maxParallelBuilders}} builders in parallel, one owner/file; L3 high (budget medium). Per wave: 3.5, exit checks, typecheck, fix. Builders: reuse code/stdlib, no speculative abstractions/single-use wrappers, list assumptions, optional Context7, return 1-line `COMMIT_MSG:`.
+3.5 Diff Guard: vs baseline+plan, revert unrelated edits/weakened tests.
 
-4 Blind Edge-Case Tests (L2/L3; not budget/no-tests; tests wave): opposite-provider Tester, L2 medium, L3 high; sees only task/brief/signatures; no production edits.
+4 Blind Edge-Case Tests (L2/L3; not budget/no-tests; tests wave): opposite-provider Tester, L2 medium, L3 high; sees only task/brief/signatures/isolation; no production edits.
 
-5 Unless --no-tests, run quiet targeted tests+lint/typecheck (full: L2/L3 final or --commit). Unless --no-audit: L0 self-check diff; L1/budget opposite-provider Auditor medium; L2 high; L3 lint gate, then Dual Audit (not budget/one-provider; fail over on Auditor). Send only this run's `git diff -U5`+new files (audit-only: all uncommitted), contracts, line ranges. Evidence only: BLOCKER = file:line, failing input, impact; else NIT. `VERDICT: REJECTED` needs a BLOCKER, else `VERDICT: APPROVED`.
+5 Unless --no-tests, run quiet targeted tests+lint/typecheck (full: L2/L3 final/--commit). Unless --no-audit: L0 self-check diff; L1/budget opposite-provider Auditor medium; L2 high; L3 lint gate, then Dual Audit (not budget/one-provider; fail over on Auditor). Auditors get Step 4 tests+results. Send only run's `git diff -U5`+new files (audit-only: all uncommitted), contracts, line ranges. Evidence only: BLOCKER = file:line, failing input, impact; else NIT. `VERDICT: REJECTED` needs a BLOCKER, else `VERDICT: APPROVED`. Any auditor's reproduced BLOCKER vetoes APPROVED (no majority/override).
 
-6 Fix failures/BLOCKERs, max 2 rounds: R1 Builder gets brief, diff, blockers, failures: medium (L3 high, budget low, one-liner Tier 1). R2 or repeated error/regression: Architect high (budget Tier 2 medium) root-causes first. Rerun 3.5+5.
+6 Fix failures/BLOCKERs, max 2 rounds: R1 Builder (brief, diff, blockers, failures): medium (L3 high, budget low, one-liner Tier 1). R2/repeated error/regression: Architect high (budget Tier 2 medium) root-causes first. Rerun 3.5+5. After R2: your <=10-line micro-patch only if logged in Model Trace + Step 5 re-verified; else save state, stop.
 
-7 --commit only if tests+audit pass: run's files, COMMIT_MSG, no --no-verify/amend. Optional `t3-auto-build trace record --step <name>` (+`--step run`). Report: level/shape/flags, files/commit, tests, verdict+NITs, Model Trace (step, provider, model, effort, locks, failovers), `Not checked:` + assumptions.
+7 --commit only if tests+audit pass: run files, COMMIT_MSG, no --no-verify/amend. Optional `t3-auto-build trace record` (ref state). Report: level/shape/flags, files/commit, tests, verdict+NITs, Model Trace (step, provider, model, effort, locks, failovers), `Not checked:` + assumptions.

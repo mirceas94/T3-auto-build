@@ -30,16 +30,18 @@ The guards apply only when the hooks are installed and wired into `settings.json
 
 | Guard | Tools | Blocked |
 |---|---|---|
-| Secret files | `Edit`, `Write`, `MultiEdit` | A `file_path` for `.env` or `.env.*`, ending in `.pem`, `.key`, `.p12` or `.pfx`, or containing `id_rsa` or `id_ed25519` |
-| Git | `Bash` | Text matching `git push` followed by `-f` or `--force`, or `git reset --hard` |
-| Recursive `rm` | `Bash` | A recursive `rm` aimed at an absolute, drive or home path, a command substitution, the current directory, `*`, a `..` or `.git` segment, or a dot-file glob. A command too costly to scan is also blocked |
+| Secret files | `Edit`, `Write`, `MultiEdit` | A `file_path` for `.env` or `.env.*`, ending in `.pem`, `.key`, `.p12` or `.pfx`, or containing `id_rsa` or `id_ed25519`. An NTFS stream suffix (`:stream`, `::$DATA`) is ignored when matching |
+| Git | `Bash` | Text matching `git push` followed by `-f` or `--force`, a `+ref` refspec, or `git reset --hard`, including after git global options such as `-C` or `-c` |
+| Recursive `rm` | `Bash` | A recursive `rm` aimed at an absolute, drive or home path, a command substitution, a brace list such as `{a,b}`, a bare variable, the current directory, `*`, a `..` or `.git` segment, or a dot-file glob. A command too costly to scan is also blocked |
 | Speed modes | `delegate_task` | A fast or priority mode, unless the config sets `allowFastModes` |
 | Provider conflicts | `delegate_task` | Two different known providers, or a model on a provider that does not host it |
 | Retired models | `delegate_task` | A retired model, whatever the config allows |
-| Delegate models | `delegate_task` | A banned or non-allowlisted model |
+| Delegate models | `delegate_task` | A banned or non-allowlisted model. The `model` option is validated |
+| Delegate target | `delegate_task` | A `target` that is not an object |
 | Plan and availability | `delegate_task` | A model the config lists as plan-restricted, or an unexpired `plan-restricted` or `unavailable` availability entry |
 | Cooldowns | `delegate_task` | A model, provider or model pool with an active cooldown |
 | Input shape | Any hooked tool | Parsed input that names a tool but whose `tool_input` is present and not an object |
+| Payload size | Any hooked tool | Hook stdin over 8 MiB |
 
 The model and provider fields (`model`; `provider`, `providerInstanceId`, `driverKind`) are read from the
 top level of the tool input and from `target`.
@@ -58,6 +60,7 @@ off. It applies even when the call names no model.
   bypass a `provider:claude` lock.
 - A model is cross-hosted only when the call names the hosting provider explicitly **and** the config's
   `models` list declares that model on it. Naming a provider that does not host the model is blocked.
+- A quota burst lock (`tier:<p>:<pool>`) lasts `quota.burstLockMs` (default 5 minutes). `0` writes none.
 - A `provider:claude` lock does not cover a declared Antigravity-hosted Claude model, which spends
   Antigravity quota. Lock it with `provider:antigravity`, `tier:antigravity:third-party-claude` or a
   model key.
@@ -85,6 +88,7 @@ does not enable it.
 
 - Empty or unparsable hook input, and unexpected errors inside the hook, allow the tool call.
 - Input that parses but has an invalid shape (see "Input shape" above) is blocked.
+- Hook stdin over 8 MiB: PreToolUse blocks the call; other hooks fail open.
 - A missing or malformed availability file restricts nothing.
 - An unreadable or non-JSON `catalog.overrides.json` is ignored with a warning, including the models it
   retires. The built-in retired list still applies.
@@ -104,11 +108,12 @@ does not enable it.
 Bypasses of the following kinds are known limits, not vulnerabilities:
 
 - Obfuscated or indirect shell commands, including scripts that delete files.
-- PowerShell removal commands such as `Remove-Item`, and `find -delete`.
-- Targets hidden in variables. Variables are not expanded; only home directory variables such as
-  `$HOME` and `%USERPROFILE%` are recognized.
-- Other destructive commands, and other spellings of the Git ones, such as `git -C <dir> push -f` or
-  a `+` refspec.
+- PowerShell removal commands such as `Remove-Item`, `find -delete`, and `xargs` feeding `rm`.
+- Targets in variable paths with suffixes (such as `$DIR/sub`). Variables are not expanded; bare variable
+  targets are blocked, while prefixed paths are recognized only for home directory variables such as `$HOME`
+  and `%USERPROFILE%`.
+- Targets assembled by quote splicing.
+- Other destructive commands.
 - Any other tool, including other shells, notebook edits, other MCP tools, and other ways to start an
   agent.
 - Reading secret files, writing them through `Bash`, or secret files with names not listed above.
@@ -132,8 +137,9 @@ A documented guard that fails on a plain, direct form of what it claims to block
   `telemetry.enabled: false`, and is kept by `uninstall`.
 - It runs official provider CLIs, which may use the network, for model probes (`sync-models`,
   `init --probe`, and `check-models` or `preflight` when the cache is stale or with `--refresh`; lock
-  rechecks also probe), version checks (`check-models`, `preflight`, `doctor`) and login status
-  checks (`quota check`). Probes spend real quota. The installed `$auto-build` skill runs `preflight`
+  rechecks also probe), version checks (`check-models`, `preflight`, `doctor`). Quota reads (`quota check`,
+  `preflight`) run `codex app-server` and `agy -p /usage`, and `claude -p /usage` only when enabled; they run
+  no login status check. Probes spend real quota. The installed `$auto-build` skill runs `preflight`
   before it delegates. Scarce-quota models are probed only with `--probe-scarce`.
 - Those CLIs use their own stored login and inherit your environment. An API key variable may cause
   probes to be billed to the API.

@@ -10,7 +10,7 @@ You need Node 18.18 or newer and Git. There is nothing to install.
 ```sh
 git clone https://github.com/mirceas94/T3-auto-build.git
 cd T3-auto-build
-node --test
+tmp="$(mktemp -d)" && HOME="$tmp" USERPROFILE="$tmp" APPDATA="$tmp/roaming" LOCALAPPDATA="$tmp/local" T3AB_QUOTA_READERS=off node --test; rm -rf "$tmp"
 ```
 
 To try the CLI without touching your own configuration, point it at a throwaway directory:
@@ -20,9 +20,10 @@ node bin/cli.mjs init --yes --target .sandbox-claude
 node bin/cli.mjs doctor --target .sandbox-claude
 ```
 
-`.sandbox-claude/` is gitignored. Run `node --test` before creating it, or delete it first: the
-sanitize test scans every file in the working tree, and the installed hook commands contain your
-absolute path.
+`.sandbox-claude/` is gitignored. `test/sanitize.test.mjs` scans tracked files and untracked
+non-ignored files via `git ls-files -co --exclude-standard` (falling back to walking the tree,
+skipping `.git` and `CACHEDIR.TAG` caches, only when `git` is unavailable), so `.sandbox-claude/`
+is skipped under Git; delete it afterwards anyway if you run tests without Git.
 
 ## Rules
 
@@ -37,14 +38,32 @@ absolute path.
 
 ## Tests
 
+Run the suite with temporary `HOME`, `USERPROFILE`, `APPDATA` and `LOCALAPPDATA` outside the repo
+and `T3AB_QUOTA_READERS=off`:
+
 ```sh
-node --test
+# macOS / Linux
+tmp="$(mktemp -d)" && HOME="$tmp" USERPROFILE="$tmp" APPDATA="$tmp/roaming" LOCALAPPDATA="$tmp/local" T3AB_QUOTA_READERS=off node --test; rm -rf "$tmp"
+```
+
+```powershell
+# Windows (PowerShell). Run in a new window and close it afterwards: it changes HOME.
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("t3ab-test-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $tmp | Out-Null
+$env:HOME=$tmp; $env:USERPROFILE=$tmp; $env:APPDATA="$tmp\roaming"; $env:LOCALAPPDATA="$tmp\local"; $env:T3AB_QUOTA_READERS="off"
+node --test --test-reporter=spec
+Remove-Item -Recurse -Force $tmp
 ```
 
 - Add or update a test for every behavior change.
-- Tests must never read or write your real `~/.claude`. Use `sandbox()` from `test/helpers.mjs`,
-  which runs in a temporary directory and overrides `HOME`, `USERPROFILE` and `CLAUDE_CONFIG_DIR`.
-  When calling library functions directly, pass a temporary target.
+- Tests must never read or write your real `~/.claude` or home skill mirrors. Use `sandbox()` from
+  `test/helpers.mjs`, which runs in a temporary directory and overrides `HOME`, `USERPROFILE`,
+  `APPDATA`, `LOCALAPPDATA`, `CLAUDE_CONFIG_DIR`, `PATH` (stripped of provider CLI shims) and
+  `T3AB_QUOTA_READERS=off` for subprocesses, plus `PATH`, `T3AB_QUOTA_READERS`, `APPDATA` and
+  `LOCALAPPDATA` in-process. Because `process.env.HOME` and `process.env.USERPROFILE` are not
+  overridden in-process, bare `node --test` can let in-process `upgrade()` or `syncModels()` tests
+  touch real home skill mirrors; always pass the temporary home env vars above (or pass
+  `skillTargets: 'none'` when calling `install()` directly).
 - Tests must not call real provider CLIs or spend quota. Inject a fake runner.
 
 ## Adding a tier or model

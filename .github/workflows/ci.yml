@@ -38,7 +38,7 @@ jobs:
 
       - name: Check syntax
         run: |
-          for file in bin/*.mjs lib/*.mjs hooks/*.mjs test/*.mjs; do
+          for file in bin/*.mjs lib/*.mjs lib/*/*.mjs hooks/*.mjs test/*.mjs; do
             node --check "$file" || exit 1
           done
 
