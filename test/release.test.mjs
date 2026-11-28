@@ -127,6 +127,7 @@ test('CI, Dependabot, issue template, and README release links are valid', () =>
   assert.match(publish, /if:\s*github\.event_name\s*==\s*'release'\s*\|\|\s*github\.ref\s*==\s*'refs\/heads\/main'/);
   assert.doesNotMatch(publish, /^\s+GITHUB_\w+\s*:/m);
   assert.match(publish, /npm publish --provenance/);
+  assert.match(publish, /^ {4}environment: npm$/m);
   const dep = read(path.join(ROOT, '.github/dependabot.yml'));
   assert.match(dep, /package-ecosystem:\s*["']?github-actions/); assert.match(dep, /schedule:[\s\S]*?interval:\s*weekly/); assert.match(dep, /prefix:\s*["']?chore\(ci\)["']?/); assert.match(dep, /open-pull-requests-limit:/);
   assert.match(read(path.join(ROOT, '.github/ISSUE_TEMPLATE/config.yml')), /blank_issues_enabled:\s*false/);

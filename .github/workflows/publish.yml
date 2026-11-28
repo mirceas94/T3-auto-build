@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     if: github.event_name == 'release' || github.ref == 'refs/heads/main'
+    environment: npm
     permissions:
       contents: read
       id-token: write
