@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.0.0] - 2026-11-27
+## [3.0.0] - 2026-11-29
 
 Version 3.0.0 cuts the `$auto-build` skill context by over 70%, replaces multi-step startup checks with a single `preflight` command, and adds live quota-aware routing so work automatically avoids low-quota pools. It also introduces schema v3 configs with `catalog.overrides.json`, a local run ledger with `stats`, self-healing `doctor --fix`, and stricter safety guards.
 
@@ -20,6 +20,7 @@ Version 3.0.0 cuts the `$auto-build` skill context by over 70%, replaces multi-s
 ### Breaking changes and upgrade steps
 
 - **Schema v3 configs:** New subscription installs and `upgrade` write `schemaVersion: 3`. 2.x hooks and CLI do not recognize schema 3 and fall back to default settings — restore the `.bak` config backup before downgrading.
+- **2.x is no longer supported:** 2.x and older get no further fixes, including security fixes. See [SECURITY.md](SECURITY.md#supported-versions).
 - **Upgrade behavior:** `upgrade` now converts both v1 and v2 configs to v3, backing up files it may change and restoring them if a write fails. It stops before writing if an installed hook has local changes.
 - **Upgrading from 2.x:**
   1. Run `npx t3-auto-build@3.0.0 upgrade`. If it stops because an installed hook was edited locally, run `npx t3-auto-build@3.0.0 init --force` (which backs up edits to `.bak`) and re-run `upgrade`.
@@ -43,6 +44,13 @@ Version 3.0.0 cuts the `$auto-build` skill context by over 70%, replaces multi-s
   - Config keys `telemetry`, `preflight`, `catalogOverrides`, and `quota` (`minRemainingPct`, `ttlMs`, `claudeUsage`, `burstLockMs`).
   - Generated `auto-build-runtime.json` snapshot of the allowlist and bans for v3 configs.
   - Skill rules: every handoff packet (builder, tester, auditor, architect) carries the repo profile's test isolation rules; shared contracts land in wave 1 and stay frozen for parallel builders; after fix round 2 only a logged, re-verified orchestrator micro-patch (10 lines or fewer) is allowed; auditors receive blind tests and results, and any auditor's reproduced `BLOCKER` vetoes approval.
+- **Builders, catalog and project:**
+  - Skill template (`skills/auto-build/SKILL.md.tmpl`): builder rules (reuse existing code and the standard library, no speculative abstractions, list assumptions), terse sub-agent replies, a `Not checked:` line in the final report, and optional Context7 verification of third-party library APIs.
+  - Core rules (`core/CLAUDE.md`): state assumptions and tradeoffs, reuse before adding code, simplest design.
+  - Installed version: `init` and `upgrade` record the package version in the manifest, and `doctor` prints it (warning when it differs from the running CLI).
+  - Catalog & tiers (`lib/plans.mjs`): added `gpt-6.2-sol` (standard) and `gpt-6.2-astra` (scarce `astra` pool) to paid Codex tiers (`plus`, `pro-100`, `pro-200`, `pro-500`, `business`, `api`), and added `claude-fable-5-2` (scarce `fable` pool + `--parent fable`) to Claude `max`.
+  - Documentation (`README.md`): Context7 note under Optional tools; how to update an existing install; how to adopt newly released models; grouped Table of Contents.
+  - GitHub workflows & templates (`.github/`): hardened `publish.yml` OIDC `id-token: write` scope, release-tag verification, and `package-manager-cache: false`; added tailored issue templates for model/tier updates, hook guard false positives, and documentation improvements.
 
 ### Changed
 
@@ -51,7 +59,7 @@ Version 3.0.0 cuts the `$auto-build` skill context by over 70%, replaces multi-s
   - Moved the model catalog and retired list to `hooks/_catalog.mjs`, installed with the hooks.
   - `pre-tool-use.mjs` returns early for unguarded tools (`Read`, `Grep`, `Glob`, etc.) after checking input shape; `pre-compact.mjs` omits empty list lines.
 - **Quota and cooldowns:**
-  - Quota windows at or below `quota.minRemainingPct` (default `3`) lock the mapped provider or pool until reset without shortening a longer lock.
+  - Quota windows at or below `quota.minRemainingPct` (default `3`) lock the mapped provider or pool until reset without shortening a longer lock. A later live read lifts that lock early when every window read for it is above the threshold; manual, probe and burst locks are not lifted.
   - After a mid-run quota error, the skill runs `quota check <provider:model> --on-error` and follows its action (`quota set` remains the manual fallback).
   - Cooldown, availability, and quota lock writes take a file lock and replace files atomically.
   - Dated model bans (e.g. `claude-x-20250101`) block both that ID and its undated name, which also matches other dated releases of that model.
@@ -86,17 +94,6 @@ Version 3.0.0 cuts the `$auto-build` skill context by over 70%, replaces multi-s
 
 - Restructured [README.md](README.md) with a plain-language User Guide at the top and an [Advanced reference](README.md#advanced-reference) section below.
 - Aligned `CONTRIBUTING.md`, `SECURITY.md`, and `.github/` workflows and issue templates with 3.0.0 (test isolation, sanitize checks, project structure, and release workflows).
-
-## [2.3.0] - 2026-11-27
-
-### Added
-
-- Skill template (`skills/auto-build/SKILL.md.tmpl`): builder rules (reuse existing code and the standard library, no speculative abstractions, list assumptions), terse sub-agent replies, a `Not checked:` line in the final report, and optional Context7 verification of third-party library APIs.
-- Core rules (`core/CLAUDE.md`): state assumptions and tradeoffs, reuse before adding code, simplest design.
-- Installed version: `init` and `upgrade` record the package version in the manifest, and `doctor` prints it (warning when it differs from the running CLI).
-- Catalog & tiers (`lib/plans.mjs`): added `gpt-6.2-sol` (standard) and `gpt-6.2-astra` (scarce `astra` pool) to paid Codex tiers (`plus`, `pro-100`, `pro-200`, `pro-500`, `business`, `api`), and added `claude-fable-5-2` (scarce `fable` pool + `--parent fable`) to Claude `max`.
-- Documentation (`README.md`): Context7 note under Optional tools; how to update an existing install; how to adopt newly released models; grouped Table of Contents; CLI examples and tier tables updated for `2.3.0`.
-- GitHub workflows & templates (`.github/`): hardened `publish.yml` OIDC `id-token: write` scope, release-tag verification, and `package-manager-cache: false`; added tailored issue templates for model/tier updates, hook guard false positives, and documentation improvements.
 
 ## [2.2.0] - 2026-11-27
 
@@ -246,8 +243,7 @@ See [Migrating from v1](README.md#migrating-from-v1).
 - Hardened the recursive `rm` guard, cooldown handling, the pre-compact state boundary and
   `sync-models --force`.
 
-[3.0.0]: https://github.com/mirceas94/T3-auto-build/compare/v2.3.0...v3.0.0
-[2.3.0]: https://github.com/mirceas94/T3-auto-build/compare/v2.2.0...v2.3.0
+[3.0.0]: https://github.com/mirceas94/T3-auto-build/compare/v2.2.0...v3.0.0
 [2.2.0]: https://github.com/mirceas94/T3-auto-build/compare/v2.1.2...v2.2.0
 [2.1.2]: https://github.com/mirceas94/T3-auto-build/compare/v2.1.1...v2.1.2
 [2.1.1]: https://github.com/mirceas94/T3-auto-build/compare/v2.1.0...v2.1.1

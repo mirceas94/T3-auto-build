@@ -60,6 +60,8 @@ off. It applies even when the call names no model.
 - A model is cross-hosted only when the call names the hosting provider explicitly **and** the config's
   `models` list declares that model on it. Naming a provider that does not host the model is blocked.
 - A quota burst lock (`tier:<p>:<pool>`) lasts `quota.burstLockMs` (default 5 minutes). `0` writes none.
+- A live quota read (`preflight`, `quota check`) lifts a threshold lock it wrote itself once every window
+  read for that key is above `quota.minRemainingPct`. It never lifts manual, probe or burst locks.
 - A `provider:claude` lock does not cover a declared Antigravity-hosted Claude model, which spends
   Antigravity quota. Lock it with `provider:antigravity`, `tier:antigravity:third-party-claude` or a
   model key.

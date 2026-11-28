@@ -94,7 +94,7 @@ Add any of these right after `$auto-build` (for example, `$auto-build --budget -
 
 ## FAQ & troubleshooting
 
-- **How does it handle quota?** It uses your standard models first and keeps limited premium models only as backup. Add `--budget` to use less quota, or run `npx t3-auto-build@3.0.0 quota status` to see active pauses. When the 12-hour availability cache is stale, `preflight` / `check-models` sends a tiny probe per standard model; if an API key env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) is set in your shell, provider CLIs may bill probes to your API account.
+- **How does it handle quota?** It uses your standard models first and keeps limited premium models only as backup. It pauses a provider or model pool that has 3% or less left, and lifts that pause on the next check if the quota resets early. Add `--budget` to use less quota, or run `npx t3-auto-build@3.0.0 quota status` to see active pauses. When the 12-hour availability cache is stale, `preflight` / `check-models` sends a tiny probe per standard model; if an API key env var (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) is set in your shell, provider CLIs may bill probes to your API account.
 - **What about privacy?** `t3-auto-build` itself has zero dependencies, makes no network requests, and keeps its caches and run ledger on your machine. It does invoke your installed provider CLIs (`claude`, `codex`, `agy`), which send live prompts and usage checks to those providers using your existing logins.
 - **How do I update?** Run `npx t3-auto-build@3.0.0 init --yes` (or, if installed globally, run `npm install -g t3-auto-build@3.0.0`, then `t3-auto-build init --yes`), then restart T3 Code. Your edited files are preserved unless you pass `--force` (which backs them up first). An edited hook file stops `init` until you use `--force`. Coming from 1.x or 2.x? Run `npx t3-auto-build@3.0.0 upgrade` instead (`init --yes` keeps the old config format).
 - **How do I uninstall?** Run `npx t3-auto-build@3.0.0 uninstall`, then restart T3 Code. It removes installed files and caches while keeping files you edited, your cooldown file, and your run ledger. If installed globally, also run `npm uninstall -g t3-auto-build`.
@@ -119,7 +119,7 @@ hooks.
 - **Quota aware:** cooldown locks and an availability cache keep delegation away from exhausted or restricted models.
 - **Careful installs:** `init` keeps your edited files unless you pass `--force`, which backs them up first.
 - **One-call preflight:** [`preflight --json`](#preflight) reports locks, ladders, git baseline and resume state.
-- **Smaller context:** the rendered `auto-build` skill is over 70% smaller than in 2.3 (about 5.0 to 6.0 KiB across presets and tiers; the template is ~5.2 KB), with [reference text](#reference-text) loaded on demand. Compaction notes omit empty lines, and unguarded tools skip the guard checks.
+- **Smaller context:** the rendered `auto-build` skill is over 70% smaller than in 2.2 (about 5.0 to 6.0 KiB across presets and tiers; the template is ~5.2 KB), with [reference text](#reference-text) loaded on demand. Compaction notes omit empty lines, and unguarded tools skip the guard checks.
 - **Run stats and repair:** a local [run ledger](#run-ledger-and-stats) and [`doctor --fix`](#doctor---fix).
 - **Zero dependencies:** plain Node, 18.18 or newer.
 
@@ -426,7 +426,8 @@ flowchart TD
 ```
 
 1. **Step 0:** one [`preflight --json`](#preflight) call checks availability (`12h`-cached) and lock
-   rechecks and returns locks, live ladders, the `git status` baseline and resume state. When the
+   rechecks, reads [provider quota](#quota-readers-and-pace), and returns locks, live ladders, the
+   `git status` baseline and resume state. When the
    [parent model's](#parent-model) weekly quota is known and under 20%, `preflight` adds a warning
    suggesting `--budget` (without changing the parent; `quota.claudeUsage: false` turns Claude quota off).
    Without the CLI on `PATH`, the skill reads the availability and cooldown files directly.
@@ -593,8 +594,9 @@ t3-auto-build preflight --json --flags "--codex-only" --cwd .
 
 One call for Step 0. It is **not read-only**: like `check-models`, it prunes expired locks, rechecks
 due locks, writes the availability cache and probes when that cache is stale or with `--refresh`. Probes
-spend quota (see the [API billing warning](#availability-checks)). It stops on an invalid config file or
-an unreadable cooldown file.
+spend quota (see the [API billing warning](#availability-checks)). It also runs the
+[quota readers](#quota-readers-and-pace) and writes or lifts threshold locks. It stops on an invalid
+config file or an unreadable cooldown file.
 
 | JSON field | Content |
 |---|---|
@@ -803,7 +805,8 @@ t3-auto-build quota check [subject] [--refresh] [--on-error] [--claude-usage] [-
   corrupt one.
 - `check` reads remaining quota via the provider readers below (reusing `auto-build-quota.json`
   while fresh unless `--refresh` or `--on-error` is given), updates the cache, and writes threshold
-  auto-locks for windows at or below `quota.minRemainingPct`.
+  auto-locks for windows at or below `quota.minRemainingPct`. A live read also
+  [lifts them](#quota-readers-and-pace) when quota is back.
 
 ### Quota readers and pace
 
