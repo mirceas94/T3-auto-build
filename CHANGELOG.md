@@ -67,6 +67,7 @@ Version 3.0.0 cuts the `$auto-build` skill context by over 70%, replaces multi-s
 - Legacy `tier:<provider>:heavy` cooldowns now also lock the catalog's scarce models for that provider, unless the config lists its own `heavyModels`.
 - `sync-models --force` now forwards `--force` to config sync so an edited managed `SKILL.md` is backed up and replaced.
 - The `git push` guard no longer blocks a branch name such as `bug-fix`; force flags stay blocked.
+- The Antigravity CLI is now found as `agy` (then `antigravity`), so `doctor` no longer reports it missing, model checks record its version, and `init` can suggest `tri-provider`.
 
 ### Security
 

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { detect, parseTiers } from '../lib/detect.mjs';
+import { detect, findCli, parseTiers } from '../lib/detect.mjs';
+import { discover } from '../lib/discover.mjs';
 
 test('detect selects presets from available provider binaries only', () => {
   const binaries = { claude: null, codex: null, antigravity: null };
@@ -33,6 +34,21 @@ test('detect checks only the expected home marker paths and reports provider bin
   });
   assert.deepEqual(seen.map((file) => file.replace(/\\/g, '/')), ['H/.claude', 'H/.codex', 'H/.antigravity', 'H/.gemini/antigravity']);
   assert.equal(result.preset, 'claude-only');
+});
+
+test('the Antigravity CLI is found and versioned as agy, with antigravity as fallback', async () => {
+  const only = (...names) => (name) => (names.includes(name) ? `/bin/${name}` : null);
+  assert.deepEqual(findCli('antigravity', only('agy', 'antigravity')), { name: 'agy', path: '/bin/agy' });
+  assert.deepEqual(findCli('antigravity', only('antigravity')), { name: 'antigravity', path: '/bin/antigravity' });
+  assert.equal(findCli('antigravity', only()), null);
+  assert.equal(findCli('claude', only('agy')), null);
+  const calls = [];
+  const { binaries } = await discover({
+    config: {}, which: only('agy'),
+    runner: async (cmd, args) => { calls.push([cmd, ...args]); return { status: 0, stdout: '1.2.3' }; },
+  });
+  assert.deepEqual(calls, [['agy', '--version']]);
+  assert.deepEqual(binaries.antigravity, { found: true, version: '1.2.3' });
 });
 
 test('tiers derive sharing mode and heavy model defaults', () => {

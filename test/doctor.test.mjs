@@ -48,6 +48,24 @@ test('doctor warns when a tier has no installed CLI binary', (t) => {
   assert.doesNotMatch(result.stdout, /antigravity tier none/);
 });
 
+test('doctor finds the Antigravity CLI under its agy name', (t) => {
+  const s = sandbox(t);
+  const installed = s.cli('init', '--yes', '--antigravity-tier', 'pro');
+  assert.equal(installed.status, 0, installed.stderr);
+  const bin = path.join(s.dir, 'agy bin');
+  write(path.join(bin, 'agy'), '#!/bin/sh\n');
+  fs.chmodSync(path.join(bin, 'agy'), 0o755);
+  write(path.join(bin, 'agy.cmd'), '@exit /b 0\r\n');
+  const doctor = (PATH) => spawnSync(process.execPath, [CLI, 'doctor', '--target', s.target], {
+    cwd: s.dir, env: { ...s.env, PATH }, encoding: 'utf8',
+  });
+  const missing = /antigravity tier pro is configured but its CLI binary is missing/;
+  assert.match(doctor('').stdout, missing);
+  const found = doctor(bin);
+  assert.equal(found.status, 0, found.stderr);
+  assert.doesNotMatch(found.stdout, missing);
+});
+
 test('doctor handles invalid checkedAt, non-object cooldown JSON, and non-file managed paths cleanly', (t) => {
   const s = sandbox(t);
   assert.equal(s.cli('init', '--yes', '--claude-tier', 'pro').status, 0);
