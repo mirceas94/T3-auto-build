@@ -25,8 +25,8 @@ Type `$auto-build <task>` in T3 Code to plan, build, test, and review a coding t
 
 ## What you need
 
-- **T3 Code** (also installs cleanly for Claude Code).
-- **Node.js 18.18 or newer** (zero third-party dependencies).
+- **[T3 Code](https://t3.codes/download)** (also installs cleanly for Claude Code).
+- **[Node.js 18.18 or newer](https://nodejs.org/en/download)** (zero third-party dependencies).
 - **At least one eligible subscription plan** (pass `none` for any provider you do not use):
   - **Claude:** `pro`, `max`, `ultra`, `team-standard`, `team-premium`, or `api` (`free` cannot run Claude Code; `api` requires `--allow-usage-credits`).
   - **Codex:** `free`, `go`, `plus`, `pro-100`, `pro-200`, `pro-500`, `business`, or `api` (`api` requires `--allow-usage-credits`).
