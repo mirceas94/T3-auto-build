@@ -56,7 +56,7 @@ test('the changelog and security policy name the package version', () => {
   }
   const security = read(path.join(ROOT, 'SECURITY.md'));
   assert.match(security, new RegExp(`^\\| ${pkg.version.split('.')[0]}\\.x \\| Yes \\|`, 'm'));
-  assert.match(security, /^\| 1\.x and older \| No\b/m);
+  assert.match(security, /^\| 2\.x and older \| No\b/m);
   for (const topic of [/Speed-mode guard/, /provider:claude/, /cross-hosted only/, /unparsable hook input/, /invalid shape/, /RETIRED_MODELS/]) {
     assert.match(security, topic);
   }

@@ -26,7 +26,7 @@ export const SCHEMA_VERSION = 3;
 export const QUOTA_DEFAULTS = Object.freeze({
   minRemainingPct: 3,
   ttlMs: 300_000,
-  claudeUsage: false,
+  claudeUsage: true,
   burstLockMs: 300_000,
 });
 

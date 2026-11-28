@@ -5,8 +5,7 @@
 | Version | Supported |
 |---|---|
 | 3.x | Yes |
-| 2.x | Yes |
-| 1.x and older | No, including security fixes. Upgrade, then run `t3-auto-build upgrade` |
+| 2.x and older | No, including security fixes. Upgrade, then run `t3-auto-build upgrade` |
 
 ## Reporting a vulnerability
 
@@ -138,9 +137,9 @@ A documented guard that fails on a plain, direct form of what it claims to block
 - It runs official provider CLIs, which may use the network, for model probes (`sync-models`,
   `init --probe`, and `check-models` or `preflight` when the cache is stale or with `--refresh`; lock
   rechecks also probe), version checks (`check-models`, `preflight`, `doctor`). Quota reads (`quota check`,
-  `preflight`) run `codex app-server` and `agy -p /usage`, and `claude -p /usage` only when enabled; they run
-  no login status check. Probes spend real quota. The installed `$auto-build` skill runs `preflight`
-  before it delegates. Scarce-quota models are probed only with `--probe-scarce`.
+  `preflight`) run `codex app-server`, `agy -p /usage` and, unless `quota.claudeUsage` is `false`,
+  `claude -p /usage --no-session-persistence --safe-mode`; they run no login status check. Probes spend
+  real quota. The installed `$auto-build` skill runs `preflight` before it delegates. Scarce-quota models are probed only with `--probe-scarce`.
 - Those CLIs use their own stored login and inherit your environment. An API key variable may cause
   probes to be billed to the API.
 - `check-models` and `preflight` also run any command listed under `discovery` in the config.

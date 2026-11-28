@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import {
-  CONFIG_FILE, COOLDOWN_FILE, QUOTA_FILE, loadConfig, withFileLock,
+  CONFIG_FILE, COOLDOWN_FILE, QUOTA_DEFAULTS, QUOTA_FILE, loadConfig, withFileLock,
 } from '../hooks/_shared.mjs';
 import {
   MAX_LOCK, isLocked, parseRateLimit, prune, readCooldowns, summarize, updateCooldowns, writeCooldowns,
@@ -314,12 +314,13 @@ test('antigravity TSV reader parses pools, windows, and 1970 not-started resets'
   assert.deepEqual(parseAntigravityUsage('garbage'), []);
 });
 
-test('claude reader is off by default and parses ANSI + IANA timezone output when opted in', async () => {
+test('claude reader writes no session, can be turned off, and parses ANSI + IANA timezone output', async () => {
+  assert.equal(QUOTA_DEFAULTS.claudeUsage, true);
   let called = 0;
   const runner = async (cmd, args) => {
     called += 1;
     assert.equal(cmd, 'claude');
-    assert.deepEqual(args, ['-p', '/usage']);
+    assert.deepEqual(args, ['-p', '/usage', '--no-session-persistence', '--safe-mode']);
     return {
       status: 0,
       stdout: '\x1b[1mCurrent session: 6% used · resets Nov 28, 7:30am (Europe/Bucharest)\x1b[0m\n'
@@ -329,12 +330,23 @@ test('claude reader is off by default and parses ANSI + IANA timezone output whe
     };
   };
 
-  // Off by default: never invokes runner.
-  const off = await readProviderQuota('claude', { runner, now: NOW });
+  // Turned off: never invokes runner.
+  const off = await readProviderQuota('claude', { runner, claudeUsage: false, now: NOW });
   assert.deepEqual(off, { status: 'unknown', windows: [] });
   assert.equal(called, 0);
 
-  // Opt-in: parses ANSI and IANA timezone (Europe/Bucharest is UTC+2 in Nov/Dec).
+  // The usage-breakdown block of real output must not void the windows.
+  const real = parseClaudeUsage('You are currently using your subscription to power your Claude Code usage\n\n'
+    + 'Current session: 63% used · resets Nov 28, 7:30am (Europe/Bucharest)\n'
+    + 'Current week (all models): 93% used · resets Dec 1, 11am (Europe/Bucharest)\n\n'
+    + "What's contributing to your usage?\n"
+    + 'Approximate · sessions on this machine only · shares overlap\n\n'
+    + 'Last 24h · 871 requests · 40 sessions\n'
+    + '  44%  Turn off skills you don\'t use · 22k tokens per request\n'
+    + '  Top skills: /auto-build 3%\n  Top MCP servers: t3-code 6%\n', NOW);
+  assert.deepEqual(real.map((w) => w.remainingPct), [37, 7]);
+
+  // On: parses ANSI and IANA timezone (Europe/Bucharest is UTC+2 in Nov/Dec).
   const on = await readProviderQuota('claude', { runner, claudeUsage: true, now: NOW });
   assert.equal(called, 1);
   assert.equal(on.status, 'ok');

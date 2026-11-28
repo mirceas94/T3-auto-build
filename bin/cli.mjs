@@ -86,7 +86,7 @@ quota clear flag: --all        remove every lock
 quota check only:
   --refresh                    ignore the quota cache TTL
   --on-error                   after a quota error: re-read, then answer retry or failover (needs a subject)
-  --claude-usage               also read Claude usage (creates Claude session directories)
+  --claude-usage               read Claude usage even if quota.claudeUsage is false
   --json                       print machine-readable results
 
 preflight only:

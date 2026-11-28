@@ -12,7 +12,7 @@
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license">
 </p>
 
-Type `$auto-build <task>` in T3 Code to plan, build, test, and review a coding task across the AI subscriptions you already pay for. It splits larger tasks into safe parallel steps. All but tiny changes are reviewed by a different model when one is available; tiny edits are self-checked, and `--no-audit` skips review. Before delegating, it checks temporary pauses after quota limits and, for Codex and Antigravity, remaining quota (Claude only if you opt in), so work stays away from models you are out of quota on. Built-in safety hooks also block common destructive commands (such as recursive `rm` on broad paths or `git push --force` / `git reset --hard`) and edits to secret files like `.env` or private keys. Hooks only run on Claude sessions (via `~/.claude/settings.json`) and check only Claude's Bash and file-edit tools: PowerShell commands such as `Remove-Item`, and shell writes to `.env`, are not blocked. They are a safety net against common mistakes, not a security sandbox.
+Type `$auto-build <task>` in T3 Code to plan, build, test, and review a coding task across the AI subscriptions you already pay for. It splits larger tasks into safe parallel steps. All but tiny changes are reviewed by a different model when one is available; tiny edits are self-checked, and `--no-audit` skips review. Before delegating, it checks temporary pauses after quota limits and remaining quota, so work stays away from models you are out of quota on. Built-in safety hooks also block common destructive commands (such as recursive `rm` on broad paths or `git push --force` / `git reset --hard`) and edits to secret files like `.env` or private keys. Hooks only run on Claude sessions (via `~/.claude/settings.json`) and check only Claude's Bash and file-edit tools: PowerShell commands such as `Remove-Item`, and shell writes to `.env`, are not blocked. They are a safety net against common mistakes, not a security sandbox.
 
 ## Table of Contents
 
@@ -427,7 +427,7 @@ flowchart TD
 1. **Step 0:** one [`preflight --json`](#preflight) call checks availability (`12h`-cached) and lock
    rechecks and returns locks, live ladders, the `git status` baseline and resume state. When the
    [parent model's](#parent-model) weekly quota is known and under 20%, `preflight` adds a warning
-   suggesting `--budget` (without changing the parent; Claude quota requires `quota.claudeUsage`).
+   suggesting `--budget` (without changing the parent; `quota.claudeUsage: false` turns Claude quota off).
    Without the CLI on `PATH`, the skill reads the availability and cooldown files directly.
 2. **Triage:** write a short `REPO_BRIEF` (using the cached `.claude/repo-profile.md`) and pick the
    level `L0` to `L3` and work shape `A` (multi-file, UI) or `B` (algorithms, debugging).
@@ -573,7 +573,7 @@ t3-auto-build --version | --help
 | `--reason <text>` | quota set, availability mark | Note shown by the status command. |
 | `--all` | quota clear | Remove every lock. |
 | `--on-error` | quota check | Re-read after a quota error and answer `retry` or `failover` (needs a subject). See [Quota](#quota). |
-| `--claude-usage` | quota check | Also read Claude usage (creates Claude session directories). |
+| `--claude-usage` | quota check | Read Claude usage even if `quota.claudeUsage` is `false`. |
 
 Exit codes: `0` success (including informational `doctor` warnings), `1` failure (invalid JSON, broken install), `2` usage error.
 
@@ -604,7 +604,7 @@ an unreadable cooldown file.
 | `ladders` | Ladders minus non-allowlisted, retired, restricted, unavailable and locked models, scarce pools last, then by quota pace (unknown keeps ladder order). An exhausted ladder is empty. `--<provider>-only` in `--flags` filters them. |
 | `quota` | `checkedAt`, `stale`, quota `windows` and pace `scores`. See [Quota](#quota). |
 | `canaries` | Locks to recheck through T3 (none with `--dry-run` in `--flags`). |
-| `warnings` | Advisory text. The [parent model](#parent-model) has a known weekly quota reading under 20%: it suggests `--budget` and never changes the parent. Empty when unknown or no parent is configured. Claude quota is read only with `quota.claudeUsage`. |
+| `warnings` | Advisory text. The [parent model](#parent-model) has a known weekly quota reading under 20%: it suggests `--budget` and never changes the parent. Empty when unknown or no parent is configured. `quota.claudeUsage: false` turns Claude quota off. |
 | `baseline` | `git status --short` lines. |
 | `resume` | `null` without `.claude/auto-build-state.json`; else `valid`, `file` and `state` or `error`. |
 
@@ -810,7 +810,7 @@ t3-auto-build quota check [subject] [--refresh] [--on-error] [--claude-usage] [-
 |---|---|---|
 | Codex | `codex app-server` rate limits | Experimental interface; it may change between Codex versions. |
 | Antigravity | `agy -p /usage` (or `antigravity`) | Weekly and five-hour windows for each model pool. |
-| Claude | `claude -p /usage` | **Off by default**, because each call creates Claude session directories. Enable with `quota.claudeUsage` or `--claude-usage`. |
+| Claude | `claude -p /usage --no-session-persistence --safe-mode` | Saves no session and runs no hooks or plugins. Needs a Claude CLI with both flags. Turn off with `quota.claudeUsage: false`. |
 
 - A failed, timed-out (15 s) or unrecognized read is `unknown`; routing then keeps the ladder order.
 - Set `T3AB_QUOTA_READERS=off` (also `0` or `false`) to skip spawning provider quota CLIs and treat
@@ -880,7 +880,7 @@ and:
 | `maxParallelBuilders`, `defaultModel`, `defaultEffort`, `compactionThreshold` | Run settings. |
 | `modelIds`, `discovery` | Display name to CLI id; drift adapters. |
 | `telemetry` (v3) | `enabled` (default `true`) and `maxBytes` (default `1048576`) of the [run ledger](#run-ledger-and-stats). |
-| `quota` | Optional. `minRemainingPct` (default `3`), `ttlMs` (cache lifetime, `300000`), `claudeUsage` (`false`) and `burstLockMs` (`300000`; `0` skips the burst lock). See [Quota](#quota). |
+| `quota` | Optional. `minRemainingPct` (default `3`), `ttlMs` (cache lifetime, `300000`), `claudeUsage` (`true`) and `burstLockMs` (`300000`; `0` skips the burst lock). See [Quota](#quota). |
 | `preflight` (v3) | `ttl` in milliseconds (default `43200000`) for [preflight](#preflight) `expiresAt`. It does not change the probe cache TTL. |
 | `catalogOverrides` (v3) | `false` ignores [`catalog.overrides.json`](#catalog-overrides). Read by default. |
 
@@ -984,8 +984,8 @@ destructive-command guards need no config.
 - It does run provider CLIs, which may use the network: `check-models`, `preflight`, `sync-models` and
   `init --probe` send live prompts, `check-models` and `preflight` also run their `--version` and your `discovery`
   commands. `quota check` and `preflight` run the
-  [quota readers](#quota-readers-and-pace) (`codex app-server`, `agy -p /usage` and, only if you opt
-  in, `claude -p /usage`). The quota cache keeps no account ids or emails.
+  [quota readers](#quota-readers-and-pace) (`codex app-server`, `agy -p /usage` and, unless you turn it
+  off, `claude -p /usage`). The quota cache keeps no account ids or emails.
 - `discovery` commands run with your permissions. Add only commands you trust.
 - Provider detection only checks that config folders exist; it opens nothing inside them.
 - Probes run in an empty temp directory, and the cooldown reasons they record never quote CLI output.
