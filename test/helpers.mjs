@@ -47,6 +47,8 @@ function buildSafePath(dir) {
   };
   add('node', process.execPath);
   if (GIT) add('git', GIT);
+  // npm runs bin scripts through sh, which macOS keeps in /bin, away from Homebrew's git.
+  if (process.platform !== 'win32') add('sh', '/bin/sh');
   if (needed.length) {
     const safeBin = path.join(dir, 'safe bin');
     fs.mkdirSync(safeBin, { recursive: true });

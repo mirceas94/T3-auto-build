@@ -119,7 +119,8 @@ function createExclusive(file, content) {
 }
 
 function lstatRegular(file) {
-  const stat = fs.lstatSync(file, { throwIfNoEntry: false });
+  // Windows answers EPERM for a file another process is still deleting.
+  const stat = retryBusy(() => fs.lstatSync(file, { throwIfNoEntry: false }));
   if (stat && !stat.isFile()) throw lockError(`lock path ${path.basename(file)} is not a regular file`);
   return stat;
 }
