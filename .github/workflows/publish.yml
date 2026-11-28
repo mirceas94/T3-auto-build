@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     if: github.event_name == 'release' || github.ref == 'refs/heads/main'
+    environment: npm
     permissions:
       contents: read
       id-token: write
@@ -60,6 +61,16 @@ jobs:
             }
             console.log(`Tag ${expected} matches package.json ${version}`);
           '
+
+      - name: Verify HEAD is the release tag commit
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          # No local destination: checkout may already hold this tag as a commit, which an annotated tag would clobber.
+          git fetch --no-tags --depth=1 origin "refs/tags/v$version"
+          if [ "$(git rev-parse HEAD)" != "$(git rev-parse 'FETCH_HEAD^{commit}')" ]; then
+            echo "HEAD is not the v$version tag commit" >&2
+            exit 1
+          fi
 
       - name: Test
         run: node --test

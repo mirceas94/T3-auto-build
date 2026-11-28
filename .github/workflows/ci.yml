@@ -23,7 +23,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        node: [18, 20, 22]
+        node: [18, 20, 22, 24]
     defaults:
       run:
         shell: bash
@@ -38,7 +38,7 @@ jobs:
 
       - name: Check syntax
         run: |
-          for file in bin/*.mjs lib/*.mjs hooks/*.mjs test/*.mjs; do
+          for file in bin/*.mjs lib/*.mjs lib/*/*.mjs hooks/*.mjs test/*.mjs; do
             node --check "$file" || exit 1
           done
 

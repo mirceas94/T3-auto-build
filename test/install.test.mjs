@@ -9,6 +9,7 @@ import { PRESETS, loadPreset, moduleFiles } from '../lib/install.mjs';
 import { MODULES, hashOf } from '../lib/manifest.mjs';
 import { safePath } from '../lib/paths.mjs';
 import { promptOptions } from '../lib/prompt.mjs';
+import { RULES, RULES_FILE } from '../lib/ref.mjs';
 import { LADDERS, fillTemplate } from '../lib/render.mjs';
 import { json, read, sandbox, tree, write } from './helpers.mjs';
 
@@ -58,6 +59,10 @@ for (const preset of PRESETS) {
         const count = Object.values(loadPreset(preset).allowlist).flat().length;
         assert.match(skill, new RegExp(`Strict ${count}-Model Allowlist`));
         assert.ok(skill.includes(`${box.target.replace(/\\/g, '/')}/auto-build-cooldowns.json`));
+        // The skill points at the installed rules file, which works without the CLI on PATH.
+        assert.equal(read(box.path(RULES_FILE)), `${RULES}
+`);
+        assert.ok(skill.includes(`${box.target.replace(/\\/g, '/')}/${RULES_FILE}`));
         if (preset === 'claude-only') assert.doesNotMatch(skill, /gpt-|Gemini/);
         if (preset === 'claude-codex') assert.doesNotMatch(skill, /Gemini/);
         assert.equal(ours(json(box.path('settings.json'))).length, 4);
@@ -173,6 +178,31 @@ test('existing and edited files are skipped; --force backs up; uninstall keeps e
   ok(box.cli('init', '--yes', '--force'));
   assert.equal(read(box.path('CLAUDE.md.bak')), 'mine\n');
   assert.equal(read(box.path('CLAUDE.md.bak.1')), 'second\n');
+});
+
+test('init without --force refuses to mix hook versions; --force backs up and replaces all', (t) => {
+  const box = sandbox(t);
+  ok(box.cli('init', '--yes'));
+  const first = tree(box.target);
+  const hook = (name) => box.path('hooks', 't3-auto-build', name);
+  write(hook('_shared.mjs'), '// user edit');
+  // An untouched hook of an older version, which a plain init would replace.
+  write(hook('pre-tool-use.mjs'), '// old');
+  const manifest = json(box.path(MANIFEST));
+  manifest.files['hooks/t3-auto-build/pre-tool-use.mjs'] = hashOf('// old');
+  write(box.path(MANIFEST), manifest);
+  const before = tree(box.target);
+
+  const refused = box.cli('init', '--yes');
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /_shared\.mjs has local changes.*--force/);
+  assert.deepEqual(tree(box.target), before);
+
+  ok(box.cli('init', '--yes', '--force'));
+  assert.equal(read(hook('_shared.mjs.bak')), '// user edit');
+  for (const file of Object.keys(first).filter((name) => name.startsWith('hooks/'))) {
+    assert.equal(read(box.path(file)), first[file], file);
+  }
 });
 
 test('edited config is the base: re-render, drop banned entries, flags override', (t) => {

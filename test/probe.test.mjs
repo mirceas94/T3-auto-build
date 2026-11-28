@@ -8,6 +8,8 @@ import { fileHash, readManifest } from '../lib/manifest.mjs';
 import { resolveTiers, toConfig } from '../lib/plans.mjs';
 import { isLocked } from '../hooks/_quota.mjs';
 
+// syncModels and doctor run in-process, where "auto" skill targets would resolve under the real home directory.
+const init = (box, ...flags) => box.cli('init', '--yes', '--skill-targets', 'none', ...flags);
 const success = { status: 0, stdout: 'ok', stderr: '' };
 const fail = (stderr, status = 1) => ({ status, stdout: '', stderr });
 
@@ -59,7 +61,7 @@ test('provider rate limit skips later probes and tier limits use a heavy tier ke
 
 test('syncModels preserves custom config, records only plan restrictions, rerenders files and passes doctor', async (t) => {
   const box = sandbox(t);
-  assert.equal(box.cli('init', '--yes').status, 0);
+  assert.equal(init(box).status, 0);
   const configFile = box.path('auto-build.config.json');
   const config = json(configFile);
   config.allowlist.claude = ['Claude Opus 5.5', 'Claude Sonnet 5.5'];
@@ -103,12 +105,13 @@ test('syncModels preserves custom config, records only plan restrictions, rerend
   }
 });
 
-test('syncModels on a v2 config probes only the tier allowlist and never lifts tier restrictions', async (t) => {
+for (const schemaVersion of [3, 2]) test(`syncModels on a v${schemaVersion} config probes only the tier allowlist and never lifts tier restrictions`, async (t) => {
   const box = sandbox(t);
-  assert.equal(box.cli('init', '--yes', '--claude-tier', 'pro', '--codex-tier', 'plus').status, 0);
+  assert.equal(init(box, '--claude-tier', 'pro', '--codex-tier', 'plus').status, 0);
   const configFile = box.path('auto-build.config.json');
   const before = json(configFile);
-  assert.equal(before.schemaVersion, 2);
+  assert.equal(before.schemaVersion, 3);
+  before.schemaVersion = schemaVersion;
   before.planRestrictedModels = ['codex:gpt-6-astra'];
   write(configFile, before);
   const probed = [];
@@ -127,11 +130,12 @@ test('syncModels on a v2 config probes only the tier allowlist and never lifts t
   assert.ok(saved.planRestrictedModels.includes('codex:gpt-6-astra'));
   assert.ok(saved.planRestrictedModels.includes('codex:gpt-6.1-terra'));
   assert.equal(saved.planRestricted, undefined);
+  assert.equal(saved.schemaVersion, schemaVersion);
 });
 
 test('syncModels dry run probes but writes nothing', async (t) => {
   const box = sandbox(t);
-  assert.equal(box.cli('init', '--yes').status, 0);
+  assert.equal(init(box).status, 0);
   let probes = 0;
   const before = tree(box.target);
   const result = await syncModels(box.target, {
@@ -144,7 +148,7 @@ test('syncModels dry run probes but writes nothing', async (t) => {
 
 test('syncModels refuses an empty effective allowlist without writing', async (t) => {
   const box = sandbox(t);
-  assert.equal(box.cli('init', '--yes').status, 0);
+  assert.equal(init(box).status, 0);
   const configFile = box.path('auto-build.config.json');
   const config = json(configFile);
   config.allowlist = { claude: ['Claude Opus 5.5'] };
@@ -202,7 +206,7 @@ test('probe cooldown keys use v2 pools and lock exactly the refused hosting', as
 
 test('syncModels passes caller now to writeCooldowns and keeps the longest lock per key in a single run', async (t) => {
   const box = sandbox(t);
-  assert.equal(box.cli('init', '--yes').status, 0);
+  assert.equal(init(box).status, 0);
   const configFile = box.path('auto-build.config.json');
   const config = json(configFile);
   config.allowlist = { claude: ['Claude Opus 5.5', 'Claude Sonnet 5.5'] };

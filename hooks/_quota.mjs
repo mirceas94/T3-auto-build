@@ -1,15 +1,16 @@
 // Cooldown (rate limit / quota lockout) state shared by the installed hooks. Node >=18, node:* only.
 import fs from 'node:fs';
 import path from 'node:path';
+import { HEAVY_MODELS, LEGACY_HEAVY_MODELS, SCARCE_POOL } from './_catalog.mjs';
 import {
-  canonicalProvider, exactProvider, inferProvider, isObject, isStringList, modelKeys, normalizeName, parseJson,
-  resolveTarget, warn,
+  canonicalProvider, exactProvider, inferProvider, isObject, isStringList, lockError, modelKeys, normalizeName,
+  parseJson, removeFile, resolveTarget, retryBusy, warn, withFileLock, writeFileAtomic,
 } from './_shared.mjs';
 
 const MINUTE = 60_000;
 const DAY = 24 * 60 * MINUTE;
 // A parsed reset time comes from message text, so it can never lock for longer than this.
-const MAX_LOCK = 14 * DAY;
+export const MAX_LOCK = 14 * DAY;
 export const RECHECK_AFTER = 360 * MINUTE;
 
 /** A lock lasting more than RECHECK_AFTER past setAt gets a recheckAfter time; others are returned unchanged. */
@@ -20,8 +21,7 @@ export function withRecheck(entry, now = Date.now()) {
   return { ...entry, setAt: new Date(setAt).toISOString(), recheckAfter: new Date(setAt + RECHECK_AFTER).toISOString() };
 }
 
-const HEAVY_MODELS = { claude: ['Claude Opus 5.5'], codex: ['gpt-6-luna'], antigravity: ['Gemini 4 Carbon'] };
-export const SCARCE_POOL = { claude: 'fable', codex: 'astra', antigravity: 'third-party-claude' };
+export { SCARCE_POOL };
 
 const untilOf = (entry) => {
   const text = entry?.until ?? entry?.until_utc;
@@ -53,7 +53,7 @@ const canonicalAll = (data) => {
 function readRaw(file) {
   let text;
   try {
-    text = fs.readFileSync(file, 'utf8').replace(/^﻿/, '');
+    text = retryBusy(() => fs.readFileSync(file, 'utf8')).replace(/^﻿/, '');
   } catch (error) {
     if (error.code === 'ENOENT') return {};
     throw error;
@@ -84,23 +84,44 @@ export function readCooldowns(file, onInvalid = (key) =>
   }));
 }
 
-/**
- * Atomic replace; an empty map removes the file. Invalid entries already in the file are kept as they are,
- * unless data replaces their key or `remove` names it.
- */
-export function writeCooldowns(file, data, { remove = [], now = Date.now() } = {}) {
+function ensureHeld(file, stillHeld) {
+  if (stillHeld && !stillHeld()) {
+    throw lockError(`lost lock ${path.basename(file)}.lock before write`);
+  }
+}
+
+function writeCooldownsUnlocked(file, data, { remove = [], now = Date.now(), stillHeld } = {}) {
   const invalid = Object.entries(readRaw(file))
     .filter(([key, value]) => !Object.hasOwn(data, key) && !remove.includes(key) && !isValid(key, value));
   const stamped = Object.entries(canonicalAll(data)).map(([key, entry]) => [key, withRecheck(entry, now)]);
   const entries = Object.fromEntries([...stamped, ...invalid]);
+  ensureHeld(file, stillHeld);
   if (Object.keys(entries).length === 0) {
-    fs.rmSync(file, { force: true });
-    return;
+    removeFile(file);
+    return entries;
   }
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const temp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(temp, `${JSON.stringify(entries, null, 2)}\n`);
-  fs.renameSync(temp, file);
+  writeFileAtomic(file, `${JSON.stringify(entries, null, 2)}\n`);
+  return entries;
+}
+
+/**
+ * Atomic replace; an empty map removes the file. Invalid entries already in the file are kept as they are,
+ * unless data replaces their key or `remove` names it.
+ */
+export function writeCooldowns(file, data, { remove = [], now = Date.now(), timeoutMs, staleMs } = {}) {
+  withFileLock(file, (stillHeld) => {
+    writeCooldownsUnlocked(file, data, { remove, now, stillHeld });
+  }, { timeoutMs, staleMs });
+}
+
+/** Locked read-modify-write for cooldowns. `updater` returns `{ data, remove }` or null to leave the file unchanged. */
+export function updateCooldowns(file, updater, { now = Date.now(), onInvalid, timeoutMs, staleMs } = {}) {
+  return withFileLock(file, (stillHeld) => {
+    const current = readCooldowns(file, onInvalid);
+    const result = updater(current, stillHeld);
+    if (!result) return current;
+    return writeCooldownsUnlocked(file, result.data, { remove: result.remove, now, stillHeld });
+  }, { timeoutMs, staleMs });
 }
 
 /** Splits entries into still active (kept) and expired (removed). */
@@ -113,7 +134,9 @@ function matches(key, scope, { provider, providers, model, config }) {
   const declarations = [...new Set((providers ?? (provider === undefined ? [] : [provider]))
     .filter((id) => typeof id === 'string' && id.trim() !== ''))];
   const declared = [...new Set(declarations.map(canonicalProvider).filter(Boolean))];
-  const inferred = inferProvider(model);
+  const inferred = typeof model === 'string' && model
+    ? (inferProvider(model) ?? [...modelKeys(model, config)].map(inferProvider).find(Boolean) ?? null)
+    : null;
   const targets = [];
   const target = resolveTarget({ providers: declarations, model }, config);
   targets.push(target);
@@ -168,7 +191,8 @@ function matches(key, scope, { provider, providers, model, config }) {
   if (pool.toLowerCase() === 'heavy') {
     const family = exact ?? canonicalProvider(providerKey) ?? wanted;
     const configured = config?.tiers?.[family]?.heavyModels;
-    const legacyModels = isStringList(configured) ? configured : HEAVY_MODELS[family] ?? [];
+    const builtIn = Object.hasOwn(HEAVY_MODELS, family) ? [...LEGACY_HEAVY_MODELS[family], ...HEAVY_MODELS[family]] : [];
+    const legacyModels = isStringList(configured) ? configured : builtIn;
     return targets.some((item) => hostMatch(item)
       && (legacyModels.some(modelMatch) || item.pool === SCARCE_POOL[family]));
   }
@@ -239,13 +263,17 @@ function clockIn(text, now) {
   if (half) hour = (hour % 12) + (half === 'p' ? 12 : 0);
   const date = new Date(now);
   if (utc) {
-    date.setUTCHours(hour, minute, 0, 0);
-    if (date.getTime() <= now) date.setUTCDate(date.getUTCDate() + 1);
-  } else {
-    date.setHours(hour, minute, 0, 0);
-    if (date.getTime() <= now) date.setDate(date.getDate() + 1);
+    const y = date.getUTCFullYear();
+    const m = date.getUTCMonth();
+    const d = date.getUTCDate();
+    const today = Date.UTC(y, m, d, hour, minute, 0, 0);
+    return today > now ? today : Date.UTC(y, m, d + 1, hour, minute, 0, 0);
   }
-  return date.getTime();
+  const y = date.getFullYear();
+  const m = date.getMonth();
+  const d = date.getDate();
+  const today = new Date(y, m, d, hour, minute, 0, 0).getTime();
+  return today > now ? today : new Date(y, m, d + 1, hour, minute, 0, 0).getTime();
 }
 
 /** Next 00:00Z of a weekday given as a name or 0 (Sunday) to 6. */

@@ -433,13 +433,46 @@ test('delegate_task blocks retired, restricted and invalid requests', (t) => {
   }
 });
 
+test('v3 and v2 configs enforce the allowlist per provider; v1 keeps one flat list', (t) => {
+  const box = installed(t);
+  const allowlist = { Local: ['gpt-6.1-sol'], Codex: ['gpt-6-luna'] };
+  for (const schemaVersion of [3, 2]) {
+    write(box.path('auto-build.config.json'), { schemaVersion, allowlist });
+    allowed(box, nested({ model: 'gpt-6-luna' }));
+    blocked(box, nested({ model: 'gpt-6.1-sol' }), /outside the 2-model allowlist/);
+    // A model listed under another provider's group does not become hosted there.
+    write(box.path('auto-build.config.json'), { schemaVersion, allowlist: { Codex: ['gpt-6-luna'], Claude: ['gpt-6.1-sol'] } });
+    blocked(box, nested({ model: 'gpt-6.1-sol' }), /outside the 2-model allowlist/);
+  }
+  write(box.path('auto-build.config.json'), { allowlist });
+  allowed(box, nested({ model: 'gpt-6.1-sol' }));
+});
+
+test('a v2 config still guards like a v3 one', (t) => {
+  const box = installed(t, { ...v2Config(), schemaVersion: 2, planRestrictedModels: ['gpt-6.1-sol'] });
+  allowed(box, nested({ model: 'gpt-6-luna' }));
+  blocked(box, nested({ model: 'gpt-6.1-sol' }), /plan-restricted/);
+  blocked(box, nested({ model: 'gpt-5.4' }), /retired/);
+  blocked(box, nested({ model: 'gpt-6-luna', options: [{ id: 'fastMode', value: true }] }), /fast-mode hook/);
+});
+
+test('pre-tool-use exits early for unguarded tools without reading any file', (t) => {
+  const box = installed(t);
+  write(box.path('auto-build.config.json'), '{ nope');
+  write(box.cooldowns, '{ nope');
+  for (const tool of ['Read', 'Glob', 'Grep', 'WebFetch', 'BashOutput', 'NotebookEdit', 'mcp__x__edit_thing']) {
+    const result = box.hook('pre-tool-use', { tool_name: tool, tool_input: { file_path: '.env', command: 'git status' } });
+    assert.equal(result.status, 0, `${tool} ${result.stderr}`);
+    assert.equal(result.stderr, '', tool);
+  }
+  // The same broken files are read, and reported, for a guarded delegation.
+  assert.match(box.hook('pre-tool-use', delegate({ model: 'Claude Opus 5.5' })).stderr, /using default/);
+});
+
 const PRESERVED = `MANDATORY COMPACTION PRESERVATION RULES:
 When summarizing this session, you MUST preserve verbatim:
 1. STRICT 3-MODEL ALLOWLIST: Only my-model, other-model (Local); third-model (Extra). evil is strictly banned.
    - Retired (always blocked): ${RETIRED_MODELS.join(', ')}
-   - Plan-restricted: none
-   - Unavailable now: none
-   - Scarce pools (overflow/escalation only): none
 2. ORCHESTRATOR STATE (if $auto-build is active): Active inline flags (--fast/--strict/--plan-only/--budget/etc.), complexity tier (L0-L3), full REPO_BRIEF, IMPLEMENTER_PROVIDER, in-run EXHAUSTED models, current pipeline step, files modified so far, and exact failing test/audit file:line items.
 3. COOLDOWN STATE: Any active rate-limit/quota cooldowns recorded in ~/.claude/auto-build-cooldowns.json.
    - Active locks: none

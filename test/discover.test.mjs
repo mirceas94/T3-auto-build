@@ -66,7 +66,7 @@ test('discover is bounded by timeoutMs and runs nothing but version checks and c
   });
   assert.ok(Date.now() - started < 1500);
   assert.deepEqual(calls.sort(), [
-    ['antigravity', '--version'], ['claude', '--version'], ['codex', '--version'], ['lister', 'models'],
+    ['agy', '--version'], ['claude', '--version'], ['codex', '--version'], ['lister', 'models'],
   ]);
   assert.deepEqual(result.binaries.codex, { found: true, version: null });
   // A silent adapter must not report every configured model as missing.

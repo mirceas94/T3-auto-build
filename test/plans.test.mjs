@@ -233,15 +233,18 @@ test('supersedes compares numeric versions within a family', () => {
   assert.equal(supersedes({ family: 'gpt-luna', version: '7' }, MODELS['gpt-6.1-sol']), false);
 });
 
-test('toConfig emits a v2 config', () => {
+test('toConfig emits a v3 config', () => {
   const resolved = resolveTiers({ claude: 'max', codex: 'plus', antigravity: 'pro' });
   const config = toConfig(resolved, { userBannedModels: ['Neon'], allowFastModes: true });
   assert.deepEqual(Object.keys(config), [
     'schemaVersion', 'preset', 'subscriptions', 'parent', 'allowFastModes', 'allowUsageCredits', 'verifiedOrg', 'models',
     'allowlist', 'retiredModels', 'planRestrictedModels', 'userBannedModels', 'bannedModels', 'ladders',
-    'maxParallelBuilders', 'defaultModel', 'defaultEffort', 'compactionThreshold', 'modelIds', 'discovery',
+    'maxParallelBuilders', 'defaultModel', 'defaultEffort', 'compactionThreshold', 'modelIds', 'discovery', 'telemetry',
+    'preflight',
   ]);
-  assert.equal(config.schemaVersion, 2);
+  assert.equal(config.schemaVersion, 3);
+  assert.deepEqual(config.telemetry, { enabled: true, maxBytes: 1_048_576 });
+  assert.deepEqual(config.preflight, { ttl: 43_200_000 });
   assert.equal(config.preset, 'tri-provider');
   assert.equal(config.bannedModels, config.userBannedModels);
   assert.deepEqual(config.bannedModels, ['Neon']);

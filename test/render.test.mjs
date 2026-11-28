@@ -19,13 +19,12 @@ test('renders v1 presets and current template without unresolved slots', () => {
 test('renders v2 cross-hosted and scarce ladder entries with new template values', () => {
   const resolved = resolveTiers({ claude: 'ultra', codex: 'pro-200', antigravity: 'ultra-20x' });
   const config = toConfig(resolved);
-  const slots = '{{builderA}}\n{{architect}}\n{{maxParallelBuilders}}\n{{availabilityPath}}\n{{subscriptionSummary}}\n{{scarceModels}}\n{{retiredModels}}';
+  const slots = '{{builderA}}\n{{architect}}\n{{maxParallelBuilders}}\n{{availabilityPath}}\n{{scarceModels}}\n{{retiredModels}}';
   const rendered = renderSkill(slots, config, path.join(root, '.claude'));
 
   assert.match(rendered, /antigravity:claude-(?:sonnet|opus)-5-5/);
   assert.match(rendered, /maxParallelBuilders|\n6\n/);
   assert.match(rendered, /auto-build-availability\.json/);
-  assert.match(rendered, /claude: ultra, codex: pro-200, antigravity: ultra-20x/);
   assert.match(rendered, /claude:claude-fable-5-2/);
   assert.match(rendered, /gpt-5\.5/);
 

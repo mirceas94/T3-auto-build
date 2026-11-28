@@ -25,7 +25,7 @@ test('release CLI flags and usage errors', (t) => {
 });
 
 test('package identity, dependencies, and packed file exclusions', () => {
-  assert.equal(pkg.version, '2.3.0');
+  assert.equal(pkg.version, '3.0.0');
   for (const value of [pkg.repository.url, pkg.homepage, pkg.bugs.url]) assert.match(value, /github\.com\/mirceas94\/T3-auto-build/);
   for (const k of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies', 'bundledDependencies']) assert.ok(!pkg[k] || (Array.isArray(pkg[k]) ? pkg[k].length === 0 : Object.keys(pkg[k]).length === 0), `${k} must be empty`);
   for (const f of pkg.files) {
@@ -56,7 +56,7 @@ test('the changelog and security policy name the package version', () => {
   }
   const security = read(path.join(ROOT, 'SECURITY.md'));
   assert.match(security, new RegExp(`^\\| ${pkg.version.split('.')[0]}\\.x \\| Yes \\|`, 'm'));
-  assert.match(security, /^\| 1\.x and older \| No\b/m);
+  assert.match(security, /^\| 2\.x and older \| No\b/m);
   for (const topic of [/Speed-mode guard/, /provider:claude/, /cross-hosted only/, /unparsable hook input/, /invalid shape/, /RETIRED_MODELS/]) {
     assert.match(security, topic);
   }
@@ -127,6 +127,7 @@ test('CI, Dependabot, issue template, and README release links are valid', () =>
   assert.match(publish, /if:\s*github\.event_name\s*==\s*'release'\s*\|\|\s*github\.ref\s*==\s*'refs\/heads\/main'/);
   assert.doesNotMatch(publish, /^\s+GITHUB_\w+\s*:/m);
   assert.match(publish, /npm publish --provenance/);
+  assert.match(publish, /^ {4}environment: npm$/m);
   const dep = read(path.join(ROOT, '.github/dependabot.yml'));
   assert.match(dep, /package-ecosystem:\s*["']?github-actions/); assert.match(dep, /schedule:[\s\S]*?interval:\s*weekly/); assert.match(dep, /prefix:\s*["']?chore\(ci\)["']?/); assert.match(dep, /open-pull-requests-limit:/);
   assert.match(read(path.join(ROOT, '.github/ISSUE_TEMPLATE/config.yml')), /blank_issues_enabled:\s*false/);

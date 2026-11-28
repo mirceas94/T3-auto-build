@@ -1,8 +1,8 @@
 // SessionStart: report subscriptions, active lockouts and the availability cache (6 lines at most); prune cooldowns.
 import path from 'node:path';
-import { prune, readCooldowns, summarize, writeCooldowns } from './_quota.mjs';
+import { prune, readCooldowns, summarize, updateCooldowns } from './_quota.mjs';
 import {
-  AVAILABILITY_FILE, COOLDOWN_FILE, PROVIDER_ALIASES, configDirOf, loadConfig, readAvailability, warn,
+  AVAILABILITY_FILE, COOLDOWN_FILE, PROVIDER_ALIASES, configDirOf, isSupportedSchema, loadConfig, readAvailability, warn,
 } from './_shared.mjs';
 
 const HOUR = 60 * 60_000;
@@ -21,7 +21,7 @@ const configDir = configDirOf(import.meta.url);
 
 section('subscriptions', () => {
   const config = loadConfig(configDir);
-  if (config.schemaVersion !== 2) {
+  if (!isSupportedSchema(config)) {
     lines.push('AUTO-BUILD: legacy v1 config: run t3-auto-build upgrade');
     return;
   }
@@ -38,7 +38,12 @@ section(COOLDOWN_FILE, () => {
   // A malformed file throws here, so it is never overwritten.
   const { kept, removed } = prune(readCooldowns(file));
   lines.push(...summarize(kept));
-  if (Object.keys(removed).length) writeCooldowns(file, kept);
+  if (Object.keys(removed).length) {
+    updateCooldowns(file, (current) => {
+      const next = prune(current);
+      return Object.keys(next.removed).length ? { data: next.kept } : null;
+    }, { onInvalid: () => {}, timeoutMs: 500 });
+  }
 });
 
 section(AVAILABILITY_FILE, () => {

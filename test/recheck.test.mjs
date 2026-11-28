@@ -27,7 +27,7 @@ function setup(t, locks) {
   const check = (state, options = {}) => checkModels({
     configDir,
     config: config(),
-    which: (name) => (name === 'antigravity' ? null : path.join(os.tmpdir(), name)),
+    which: (name) => (['agy', 'antigravity'].includes(name) ? null : path.join(os.tmpdir(), name)),
     runner: () => ({ status: 0, stdout: '1.0.0', stderr: '' }),
     now: NOW,
     probe: async ({ candidates }) => {

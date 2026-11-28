@@ -2,28 +2,32 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test } from 'node:test';
-import { install, uninstall, upgrade } from '../lib/install.mjs';
+import { RETIRED_MODELS } from '../hooks/_shared.mjs';
+import { install, syncConfig, uninstall, upgrade } from '../lib/install.mjs';
 import { CliError } from '../lib/paths.mjs';
 import { resolveTiers } from '../lib/plans.mjs';
 import { summaryTable } from '../lib/prompt.mjs';
+import { RULES, RULES_FILE } from '../lib/ref.mjs';
 import { json, read, sandbox, tree, write } from './helpers.mjs';
 
 const CONFIG = 'auto-build.config.json';
 const AVAILABILITY = 'auto-build-availability.json';
+const SNAPSHOT = 'auto-build-runtime.json';
 const SKILL = ['skills', 'auto-build', 'SKILL.md'];
 const run = (target, options) => {
   const lines = [];
-  install(target, options, (line) => lines.push(line));
+  // In-process, "auto" skill targets would resolve under the real home directory.
+  install(target, { skillTargets: 'none', ...options }, (line) => lines.push(line));
   return lines.join('\n');
 };
 const quiet = { log: () => {} };
 const tiers = { claudeTier: 'max', codexTier: 'pro-200', antigravityTier: 'pro' };
 
-test('tier options write a v2 config and the parent settings', (t) => {
+test('tier options write a v3 config and the parent settings', (t) => {
   const box = sandbox(t);
   const output = run(box.target, tiers);
   const config = json(box.path(CONFIG));
-  assert.equal(config.schemaVersion, 2);
+  assert.equal(config.schemaVersion, 3);
   assert.deepEqual(config.subscriptions, { claude: 'max', codex: 'pro-200', antigravity: 'pro' });
   assert.match(output, /provider +\| tier/);
   const settings = json(box.path('settings.json'));
@@ -97,7 +101,7 @@ test('upgrade converts a v1 config once, with a backup and a re-rendered skill',
   assert.equal(result.backup, box.path(`${CONFIG}.bak`));
   assert.equal(read(result.backup), original);
   const next = json(box.path(CONFIG));
-  assert.equal(next.schemaVersion, 2);
+  assert.equal(next.schemaVersion, 3);
   assert.deepEqual(next.subscriptions, { claude: 'pro', codex: 'plus', antigravity: 'plus' });
   assert.deepEqual(next.userBannedModels, ['Foo']);
   assert.deepEqual(next.bannedModels, ['Foo']);
@@ -114,6 +118,56 @@ test('upgrade converts a v1 config once, with a backup and a re-rendered skill',
   assert.deepEqual(tree(box.target), after);
 });
 
+test('upgrade installs the rules file an older install does not have', (t) => {
+  const box = sandbox(t);
+  run(box.target, {});
+  const manifestPath = box.path('t3-auto-build.manifest.json');
+  const manifest = json(manifestPath);
+  delete manifest.files[RULES_FILE];
+  write(manifestPath, manifest);
+  fs.rmSync(box.path(RULES_FILE));
+
+  assert.equal(upgrade(box.target, quiet).upgraded, true);
+  assert.equal(read(box.path(RULES_FILE)), `${RULES}
+`);
+  assert.ok(Object.hasOwn(json(manifestPath).files, RULES_FILE));
+});
+
+test('upgrade on a v3 install only adds a missing rules file', (t) => {
+  const box = sandbox(t);
+  install(box.target, { skillTargets: 'none', claudeTier: 'pro' }, () => {});
+  const manifestPath = box.path('t3-auto-build.manifest.json');
+  const manifest = json(manifestPath);
+  delete manifest.files[RULES_FILE];
+  write(manifestPath, manifest);
+  fs.rmSync(box.path(RULES_FILE));
+  const config = read(box.path(CONFIG));
+
+  assert.equal(upgrade(box.target, quiet).upgraded, false);
+  assert.equal(read(box.path(RULES_FILE)), `${RULES}
+`);
+  assert.ok(Object.hasOwn(json(manifestPath).files, RULES_FILE));
+  assert.equal(read(box.path(CONFIG)), config);
+  const after = tree(box.target);
+  upgrade(box.target, quiet);
+  assert.deepEqual(tree(box.target), after);
+});
+
+test('syncConfig installs the rules file the re-rendered skill points to', async (t) => {
+  const box = sandbox(t);
+  run(box.target, {});
+  const manifestPath = box.path('t3-auto-build.manifest.json');
+  const manifest = json(manifestPath);
+  delete manifest.files[RULES_FILE];
+  write(manifestPath, manifest);
+  fs.rmSync(box.path(RULES_FILE));
+
+  await syncConfig(box.target, json(box.path(CONFIG)), quiet);
+  assert.equal(read(box.path(RULES_FILE)), `${RULES}
+`);
+  assert.ok(Object.hasOwn(json(manifestPath).files, RULES_FILE));
+});
+
 test('upgrade keeps hand-edited managed files and refuses configs it cannot read', (t) => {
   const box = sandbox(t);
   assert.throws(() => upgrade(box.target, quiet), /nothing to upgrade/);
@@ -121,13 +175,62 @@ test('upgrade keeps hand-edited managed files and refuses configs it cannot read
   write(box.path(...SKILL), 'mine');
   upgrade(box.target, quiet);
   assert.equal(read(box.path(...SKILL)), 'mine');
-  for (const text of ['{ bad', '[]', '{"schemaVersion":3}']) {
+  for (const text of ['{ bad', '[]', '{"schemaVersion":4}']) {
     write(box.path(CONFIG), text);
     const before = tree(box.target);
     assert.throws(() => upgrade(box.target, quiet), CliError, text);
     assert.deepEqual(tree(box.target), before);
   }
 });
+
+/** A v2 install: today's config minus the v3 keys, plus settings the upgrade must keep. */
+function asV2(box) {
+  const { telemetry, preflight, ...rest } = json(box.path(CONFIG));
+  const config = { ...rest, schemaVersion: 2, retiredModels: ['old-1'], customSetting: { keep: true } };
+  config.ladders = { ...config.ladders, tier1: ['gpt-6-luna'] };
+  write(box.path(CONFIG), config);
+  return config;
+}
+
+test('upgrade moves a v2 config to v3, keeping every setting', (t) => {
+  const box = sandbox(t);
+  run(box.target, tiers);
+  const old = asV2(box);
+  const original = read(box.path(CONFIG));
+
+  const result = upgrade(box.target, quiet);
+  assert.equal(result.upgraded, true);
+  assert.equal(read(result.backup), original);
+  const next = json(box.path(CONFIG));
+  assert.deepEqual(next, { ...old, schemaVersion: 3, retiredModels: ['old-1', ...RETIRED_MODELS] });
+  assert.equal(json(box.path(SNAPSHOT)).schemaVersion, 3);
+
+  const after = tree(box.target);
+  assert.equal(upgrade(box.target, quiet).upgraded, false);
+  assert.deepEqual(tree(box.target), after);
+});
+
+for (const from of [1, 2]) {
+  test(`a failed write during a v${from} upgrade restores every file`, (t) => {
+    const box = sandbox(t);
+    run(box.target, from === 1 ? {} : tiers);
+    if (from === 2) asV2(box); // the changed ladder makes SKILL.md due for a rewrite
+    else assert.equal(json(box.path(CONFIG)).schemaVersion, undefined);
+    fs.rmSync(box.path(SNAPSHOT), { force: true });
+    const before = tree(box.target);
+    const rename = fs.renameSync;
+    let failed = 0;
+    t.mock.method(fs, 'renameSync', (source, destination) => {
+      // SKILL.md is written after the config and the snapshot, so both must be undone.
+      if (path.basename(destination) === 'SKILL.md' && failed++ === 0) throw new Error('disk full');
+      return rename(source, destination);
+    });
+    assert.throws(() => upgrade(box.target, quiet), (error) => error instanceof CliError
+      && /upgrade failed \(disk full\); no changes were kept/.test(error.message));
+    assert.equal(failed, 1);
+    assert.deepEqual(tree(box.target), before);
+  });
+}
 
 test('uninstall removes the availability cache and nothing outside the target', (t) => {
   const box = sandbox(t);

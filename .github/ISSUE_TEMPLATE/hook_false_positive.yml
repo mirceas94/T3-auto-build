@@ -28,7 +28,7 @@ body:
     attributes:
       label: t3-auto-build version
       description: Output of `t3-auto-build --version`.
-      placeholder: "2.3.0"
+      placeholder: "3.0.0"
     validations:
       required: true
   - type: dropdown
