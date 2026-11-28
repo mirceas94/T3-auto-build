@@ -275,7 +275,8 @@ cheapest configured standard model:
 - Otherwise (such as Antigravity) it prints `recheck-via-t3: <provider> (<model>)`. The skill then
   clears the lock, sends a one-word canary `delegate_task`, and re-locks only on a rate limit.
 
-Model and pool locks are not rechecked.
+Model and pool locks are not rechecked, though a live quota read can lift a
+[threshold lock](#quota-readers-and-pace) early.
 
 ```sh
 t3-auto-build check-models --recheck-locks
@@ -819,6 +820,8 @@ t3-auto-build quota check [subject] [--refresh] [--on-error] [--claude-usage] [-
   the share of the window still to run, lowest across the applicable windows. Scarce pools stay last.
 - A window at or below `quota.minRemainingPct` locks its provider or pool until the reset. A longer
   lock is never shortened.
+- A later live read (`preflight` or `quota check`) lifts that threshold lock early when every window
+  read for it is above the threshold. Manual, probe and burst locks stay until they expire or are cleared.
 - `check <provider:model> --on-error`, after a quota error, re-reads. If the reset is under 2 minutes away it
   waits and answers `retry` (retry once). Otherwise it answers `failover` and, when no window is at or
   below the threshold, locks that pool (`tier:<p>:<pool>`) for `quota.burstLockMs` (`0` skips the lock).

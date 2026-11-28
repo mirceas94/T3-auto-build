@@ -619,6 +619,38 @@ test('B1: applyQuotaLocks caps far-future resetsAt by windowMinutes and MAX_LOCK
   fs.rmdirSync(cdLock);
 });
 
+test('applyQuotaLocks lifts only its own threshold locks once the reading shows quota again', (t) => {
+  const box = sandbox(t);
+  assert.equal(box.cli('init', '--yes').status, 0);
+  const file = box.path(COOLDOWN_FILE);
+  const entry = (extra) => ({ scope: 'tier', window: 'weekly', until: after(3_600_000), reason: 'x', source: 'quota', ...extra });
+  const seed = {
+    'tier:antigravity:standard': entry(),
+    'tier:antigravity:third-party-claude': entry(),
+    'provider:codex': entry({ scope: 'provider', source: 'manual' }),
+    'tier:claude:standard': entry({ window: 'burst' }),
+    'provider:claude': entry({ scope: 'provider' }),
+  };
+  write(file, seed);
+  const reading = (provider, pool, windowMinutes, remainingPct) => (
+    { provider, pool, windowMinutes, remainingPct, resetsAt: after(60_000) });
+  applyQuotaLocks(box.target, [
+    reading('antigravity', 'standard', 10_080, 80), reading('antigravity', 'standard', 300, 90),
+    reading('antigravity', 'third-party-claude', 10_080, 80), reading('antigravity', 'third-party-claude', 300, 1),
+    reading('codex', 'standard', 10_080, 80),
+    reading('claude', 'standard', 300, 80), // no weekly window: no proof the weekly lock is over
+  ], { now: NOW });
+  const stored = readCooldowns(file);
+  assert.equal(stored['tier:antigravity:standard'], undefined);
+  // third-party-claude stays locked (its 5h window is exhausted); the rest are not ours to lift.
+  assert.deepEqual(Object.keys(stored).sort(), Object.keys(seed).filter((k) => k !== 'tier:antigravity:standard').sort());
+
+  // A burst lock is written while quota still reads healthy, so a healthy reading must not lift it.
+  write(file, { 'tier:antigravity:standard': entry({ window: 'burst' }) });
+  applyQuotaLocks(box.target, [reading('antigravity', 'standard', 300, 90)], { now: NOW });
+  assert.ok(readCooldowns(file)['tier:antigravity:standard']);
+});
+
 test('B3: refreshQuota tracks per-provider checkedAt and never re-stamps or returns stale cached providers', async (t) => {
   const box = sandbox(t);
   assert.equal(box.cli('init', '--yes').status, 0);

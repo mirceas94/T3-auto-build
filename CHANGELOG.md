@@ -12,7 +12,7 @@ Version 3.0.0 cuts the `$auto-build` skill context by over 70%, replaces multi-s
 
 - **70%+ smaller skill context:** Rendered `SKILL.md` shrinks to 5.0–6.0 KiB (~5.2 KB template, down from ~21 KB), loading flag, cooldown, state, and rule references on demand via `t3-auto-build ref`.
 - **One-call Step 0 (`preflight`):** `t3-auto-build preflight --json` runs model checks, prunes and rechecks cooldowns, reads live quotas, and returns active locks, resolved ladders, `git status` baseline, and resume state.
-- **Live quota-aware routing:** Reads remaining quota from Claude, Codex and Antigravity, sorts eligible ladder entries by remaining pace, auto-locks nearly exhausted pools, and handles mid-run quota errors with `quota check --on-error`.
+- **Live quota-aware routing:** Reads remaining quota from Claude, Codex and Antigravity, sorts eligible ladder entries by remaining pace, auto-locks nearly exhausted pools (and unlocks them when the quota resets early), and handles mid-run quota errors with `quota check --on-error`.
 - **Self-healing installs (`doctor --fix`):** Dry-run by default; repairs missing or drifted hooks, manifest hashes, skill mirrors, the runtime snapshot, and the state file's git `info/exclude` entry.
 - **Local run ledger and stats:** Record steps with `trace record` and review runs, failovers, and audit rejections with `stats` — kept strictly on your machine.
 - **Stricter guards and model overrides:** Hardens secret-file, `rm`, `git`, `delegate_task`, symlink, and payload-size guards, and lets v3 configs retire or alias models via `catalog.overrides.json`.
@@ -33,7 +33,7 @@ Version 3.0.0 cuts the `$auto-build` skill context by over 70%, replaces multi-s
   - Quota-paced routing in `preflight`: reads provider quota (capped at 20s; timed-out reads are aborted so no late cache or lock writes happen, falling back to cache marked stale), caches it in `auto-build-quota.json` (no account IDs or emails), and orders eligible ladder entries by pace (scarce pools stay last; unknown pace keeps ladder order).
   - Preflight `warnings`: suggests `--budget` when the parent model's weekly quota is known and under 20% (never changes the parent; `quota.claudeUsage: false` turns Claude quota off).
   - Quota readers: Codex (`codex app-server`, experimental), Antigravity (`agy -p /usage`), and Claude (`claude -p /usage --no-session-persistence --safe-mode`; on by default, saves no session).
-  - `quota check [subject] [--refresh] [--on-error] [--claude-usage] [--json]`: reads live quota and writes threshold locks; `--on-error` waits out a reset under 2 minutes away and answers `retry`, else answers `failover` and burst-locks that pool when no window is exhausted.
+  - `quota check [subject] [--refresh] [--on-error] [--claude-usage] [--json]`: reads live quota and writes or lifts threshold locks; `--on-error` waits out a reset under 2 minutes away and answers `retry`, else answers `failover` and burst-locks that pool when no window is exhausted.
 - **CLI and diagnostics:**
   - `ref <flags|cooldowns|state|rules|all>`: on-demand reference text rendered from the installed config.
   - `trace record` and `stats [--days <n>] [--json]`: local JSONL run ledger (`auto-build-ledger.jsonl`) with size rotation and a summary report.
